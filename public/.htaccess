@@ -1,0 +1,8 @@
+# Static export: product ids aren't known at build time, so only /products/_/edit/ is exported.
+# Serve that shell page for every product edit URL; ProductForm reads the real id from the URL.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^products/[^/]+/edit/?$ /products/_/edit/index.html [L]
+</IfModule>
