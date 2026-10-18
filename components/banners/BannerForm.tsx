@@ -182,8 +182,8 @@ export function BannerForm({ mode, bannerId }: BannerFormProps) {
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          Only Active banners inside their schedule are returned by the public API. The storefront home page does not display
-          them yet, so saving a banner does not change the live site.
+          Active banners inside their schedule appear in the storefront home page hero, lowest order first (changes can take about a
+          minute to show). With no active banners the hero keeps its built-in slide.
         </p>
       </div>
 
@@ -191,7 +191,7 @@ export function BannerForm({ mode, bannerId }: BannerFormProps) {
 
       <div className="rounded-lg border border-zinc-200 bg-white px-5">
         <FormSection title="Images" description="The main banner image, and an optional narrower one for phones.">
-          {imageField("imageUrl", "Banner image", "Recommended size 1920x640px.", errors.imageUrl)}
+          {imageField("imageUrl", "Banner image", "Recommended size 1920x800px. The image fills the hero and is cropped to fit, so keep the important part in the middle.", errors.imageUrl)}
           {imageField("mobileImageUrl", "Mobile image (optional)", "Shown instead of the main image on small screens.", errors.mobileImageUrl)}
           {mode === "edit" && <p className="text-xs text-zinc-500">The API can change an optional image or link but not clear it. To remove one, delete the banner and create it again.</p>}
         </FormSection>

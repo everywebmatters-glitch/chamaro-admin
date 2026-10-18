@@ -175,7 +175,7 @@ export default function BannersPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Banners"
-        description="Homepage banners stored in the Chamaro API. The storefront does not display them yet."
+        description="Homepage hero banners. Active banners inside their schedule appear on the storefront, lowest order first."
         actions={
           <Link href="/banners/new/">
             <Button variant="primary" icon={<Plus className="h-4 w-4" />}>
