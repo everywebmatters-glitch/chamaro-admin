@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/products/:id/edit", "destination": "/products/_/edit/index.html" },
+    { "source": "/products/:id/edit/", "destination": "/products/_/edit/index.html" }
+  ]
+}
