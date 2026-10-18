@@ -1,0 +1,17 @@
+# Substitutions: _IMAGE (required) and _API_URL (defaults to the production API; it is public, not a secret).
+substitutions:
+  _API_URL: https://chamaro-api-477932129337.asia-south1.run.app/api/v1
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_IMAGE}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_API_URL}'
+      - '.'
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY
