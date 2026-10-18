@@ -30,3 +30,27 @@ export function uploadMedia(token: string, file: File, altText?: string) {
   form.append("file", file);
   return apiRequest<UploadedMedia>("/admin/media/upload", { method: "POST", token, body: form });
 }
+
+// GET /api/v1/admin/media: metadata for the 100 most recent files, newest first (no pagination, no image bytes).
+export interface ApiMedia {
+  id: string;
+  // Uploaded files: root-relative path that serves the bytes (resolve with resolveApiUrl). Registered external files: their own URL.
+  url: string | null;
+  filename: string;
+  altText: string | null;
+  mimeType: string;
+  size: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const MEDIA_LIST_LIMIT = 100;
+
+export function listAdminMedia(token: string, signal?: AbortSignal) {
+  return apiRequest<ApiMedia[]>("/admin/media", { token, signal });
+}
+
+// 409 RECORD_IN_USE when a product still shows the image.
+export function deleteAdminMedia(token: string, id: string) {
+  return apiRequest<void>(`/admin/media/${encodeURIComponent(id)}`, { method: "DELETE", token });
+}

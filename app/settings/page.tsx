@@ -1,47 +1,39 @@
+"use client";
+
+import { PlugZap } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { FormSection } from "@/components/ui/FormSection";
-import { Input } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Textarea";
-import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { useAdminSession } from "@/components/auth/AuthProvider";
 
 export default function SettingsPage() {
+  const { admin } = useAdminSession();
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Store Settings" description="Manage your store information and admin preferences." />
 
       <SettingsTabs />
 
-      <div className="rounded-lg border border-zinc-200 bg-white px-5">
-        <FormSection title="Store information" description="Basic information about your store.">
-          <Input label="Store name" name="storeName" defaultValue="Chamaro" />
-          <Textarea label="Store description" name="storeDescription" defaultValue="A modern e-commerce store for everyday essentials." />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Support email" name="supportEmail" type="email" defaultValue="support@chamaro.com" />
-            <Input label="Support phone" name="supportPhone" type="tel" defaultValue="+1 (555) 010-2938" />
+      <div className="rounded-lg border border-zinc-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-zinc-900">Signed in as</h2>
+        <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-zinc-500">Name</dt>
+            <dd className="text-zinc-900">{admin.name}</dd>
           </div>
-        </FormSection>
-
-        <FormSection title="Admin profile" description="Your personal admin account details.">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Full name" name="adminName" defaultValue="Chamaro Admin" />
-            <Input label="Email" name="adminEmail" type="email" defaultValue="admin@chamaro.com" />
+          <div>
+            <dt className="text-zinc-500">Email</dt>
+            <dd className="text-zinc-900">{admin.email}</dd>
           </div>
-          <Input label="New password" name="password" type="password" placeholder="Leave blank to keep current password" />
-        </FormSection>
-
-        <FormSection title="General settings" description="Regional and display preferences.">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Currency" name="currency" defaultValue="USD" />
-            <Input label="Timezone" name="timezone" defaultValue="UTC-05:00 (Eastern Time)" />
-          </div>
-        </FormSection>
+        </dl>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary">Cancel</Button>
-        <Button variant="primary">Save Changes</Button>
-      </div>
+      <EmptyState
+        icon={PlugZap}
+        title="Store settings are not connected to the API yet"
+        description="Store name, support contact details, currency and timezone are not stored anywhere yet, so there is nothing to edit here. Changing your own name or password also needs an API endpoint that does not exist yet."
+      />
     </div>
   );
 }

@@ -1,74 +1,127 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Globe, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ImageIcon, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { ImagePreview } from "@/components/ui/ImagePreview";
+import { SearchBar } from "@/components/ui/SearchBar";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingState } from "@/components/ui/LoadingState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { mockBanners } from "@/lib/mock-data";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { ImagePreview } from "@/components/ui/ImagePreview";
+import { NoticeBanner, type Notice } from "@/components/ui/NoticeBanner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { useAdminSession } from "@/components/auth/AuthProvider";
+import { ApiError } from "@/lib/api/client";
+import { deleteAdminBanner, listAdminBanners, type ApiBanner } from "@/lib/api/banners";
+import { getSessionToken } from "@/lib/auth/session";
 import { formatDate } from "@/lib/utils";
-import type { Banner } from "@/lib/types";
+
+const STATUS_LABELS = { ACTIVE: "Active", DRAFT: "Draft", ARCHIVED: "Archived" } as const;
+
+type Loaded = { key: number; banners: ApiBanner[] } | { key: number; error: ApiError };
+
+function schedule(banner: ApiBanner): string {
+  if (!banner.startAt && !banner.endAt) return "Always";
+  const from = banner.startAt ? formatDate(banner.startAt) : "any time";
+  const to = banner.endAt ? formatDate(banner.endAt) : "no end";
+  return `${from} → ${to}`;
+}
 
 export default function BannersPage() {
-  const [banners, setBanners] = useState<Banner[]>(mockBanners);
-  const [pendingDelete, setPendingDelete] = useState<Banner | null>(null);
+  const { logout } = useAdminSession();
+  const [reloadCount, setReloadCount] = useState(0);
+  const [result, setResult] = useState<Loaded | null>(null);
+  const [search, setSearch] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<ApiBanner | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const isLoading = result?.key !== reloadCount;
 
-  const toggleActive = (id: string) => {
-    setBanners((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: b.status === "Active" ? "Inactive" : "Active" } : b))
-    );
-  };
+  useEffect(() => {
+    const controller = new AbortController();
+    const key = reloadCount;
+    listAdminBanners(getSessionToken() ?? "", controller.signal)
+      .then((banners) => setResult({ key, banners }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't load banners.");
+        if (apiError.status === 401) return logout();
+        setResult({ key, error: apiError });
+      });
+    return () => controller.abort();
+  }, [reloadCount, logout]);
 
-  const columns: DataTableColumn<Banner>[] = [
+  const banners = useMemo(() => (result && "banners" in result ? result.banners : []), [result]);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term ? banners.filter((banner) => banner.title.toLowerCase().includes(term)) : banners;
+  }, [banners, search]);
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const banner = pendingDelete;
+    setDeleting(true);
+    try {
+      await deleteAdminBanner(getSessionToken() ?? "", banner.id);
+      setNotice({ tone: "success", text: `Deleted “${banner.title}”.` });
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't delete the banner.");
+      if (apiError.status === 401) return logout();
+      setNotice({
+        tone: apiError.status === 404 ? "success" : "error",
+        text: apiError.status === 404 ? `“${banner.title}” was already deleted.` : `Couldn't delete “${banner.title}”: ${apiError.message}`,
+      });
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+      setReloadCount((n) => n + 1);
+    }
+  }
+
+  const columns: DataTableColumn<ApiBanner>[] = [
     {
       key: "preview",
       header: "Preview",
-      render: (b) => <ImagePreview label={b.title} size="md" />,
+      render: (banner) => <ImagePreview label={banner.title} size="md" src={banner.imageUrl} />,
     },
     {
       key: "title",
       header: "Title",
-      render: (b) => (
+      render: (banner) => (
         <div>
-          <p className="font-medium text-zinc-900">{b.title}</p>
-          <p className="text-xs text-zinc-400">{b.subtitle}</p>
+          <Link href={`/banners/edit/?id=${encodeURIComponent(banner.id)}`} className="font-medium text-zinc-900 hover:underline">
+            {banner.title}
+          </Link>
+          {banner.linkUrl && <p className="max-w-xs truncate text-xs text-zinc-400">{banner.linkUrl}</p>}
         </div>
       ),
     },
-    { key: "order", header: "Order", render: (b) => b.order },
-    { key: "status", header: "Status", render: (b) => <StatusBadge status={b.status} /> },
-    { key: "updated", header: "Updated", render: (b) => <span className="text-zinc-500">{formatDate(b.updatedAt)}</span> },
+    { key: "position", header: "Order", render: (banner) => banner.position },
+    { key: "status", header: "Status", render: (banner) => <StatusBadge status={STATUS_LABELS[banner.status]} /> },
+    { key: "schedule", header: "Schedule", render: (banner) => <span className="text-zinc-500">{schedule(banner)}</span> },
+    { key: "updated", header: "Updated", render: (banner) => <span className="text-zinc-500">{formatDate(banner.updatedAt)}</span> },
     {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
       className: "text-right",
       headerClassName: "text-right",
-      render: (b) => (
+      render: (banner) => (
         <div className="flex justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => toggleActive(b.id)}
-            className="mr-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
-          >
-            {b.status === "Active" ? "Deactivate" : "Activate"}
-          </button>
           <Link
-            href={`/banners/${b.id}/edit`}
-            aria-label={`Edit ${b.title}`}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100"
+            href={`/banners/edit/?id=${encodeURIComponent(banner.id)}`}
+            aria-label={`Edit ${banner.title}`}
+            className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
           >
             <Pencil className="h-4 w-4" />
           </Link>
           <button
             type="button"
-            aria-label={`Delete ${b.title}`}
-            onClick={() => setPendingDelete(b)}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600"
+            aria-label={`Delete ${banner.title}`}
+            onClick={() => setPendingDelete(banner)}
+            className="rounded-md p-1.5 text-zinc-500 hover:bg-red-50 hover:text-red-600"
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -77,13 +130,54 @@ export default function BannersPage() {
     },
   ];
 
+  let content;
+  if (isLoading || !result) {
+    content = <LoadingState label="Loading banners..." />;
+  } else if ("error" in result) {
+    content = (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Couldn't load banners"
+        description={result.error.message}
+        action={
+          <Button variant="secondary" onClick={() => setReloadCount((n) => n + 1)}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  } else if (banners.length === 0) {
+    content = (
+      <EmptyState
+        icon={ImageIcon}
+        title="No banners yet"
+        description="Create a banner to store it in the API."
+        action={
+          <Link href="/banners/new/">
+            <Button variant="primary" icon={<Plus className="h-4 w-4" />}>
+              Add Banner
+            </Button>
+          </Link>
+        }
+      />
+    );
+  } else if (filtered.length === 0) {
+    content = <EmptyState title="No matching banners" description="Try a different search." />;
+  } else {
+    content = (
+      <div className="rounded-lg border border-zinc-200 bg-white">
+        <DataTable columns={columns} data={filtered} getRowKey={(banner) => banner.id} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Banners"
-        description="Manage the promotional banners shown on the customer homepage."
+        description="Homepage banners stored in the Chamaro API. The storefront does not display them yet."
         actions={
-          <Link href="/banners/new">
+          <Link href="/banners/new/">
             <Button variant="primary" icon={<Plus className="h-4 w-4" />}>
               Add Banner
             </Button>
@@ -91,32 +185,20 @@ export default function BannersPage() {
         }
       />
 
-      <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-        <Globe className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>
-          Changes made here update the banners shown live on the Chamaro customer-facing homepage. Deactivating a
-          banner removes it from the site immediately.
-        </p>
-      </div>
+      {notice && <NoticeBanner notice={notice} onDismiss={() => setNotice(null)} />}
 
-      {banners.length === 0 ? (
-        <EmptyState title="No banners yet" description="Add your first homepage banner." />
-      ) : (
-        <div className="rounded-lg border border-zinc-200 bg-white">
-          <DataTable columns={columns} data={banners} getRowKey={(b) => b.id} />
-        </div>
-      )}
+      <SearchBar placeholder="Search banners..." value={search} onChange={setSearch} className="sm:w-72" />
+
+      {content}
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="Delete banner"
-        description={`Are you sure you want to delete "${pendingDelete?.title}"? It will be removed from the homepage immediately.`}
-        confirmLabel="Delete"
+        description={`Delete "${pendingDelete?.title}"? This can't be undone.`}
+        confirmLabel={deleting ? "Deleting..." : "Delete"}
+        busy={deleting}
         onCancel={() => setPendingDelete(null)}
-        onConfirm={() => {
-          setBanners((prev) => prev.filter((b) => b.id !== pendingDelete?.id));
-          setPendingDelete(null);
-        }}
+        onConfirm={confirmDelete}
       />
     </div>
   );

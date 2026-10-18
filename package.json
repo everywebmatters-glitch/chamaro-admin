@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
+    "test": "node --test tests/*.test.ts",
     "postbuild": "node scripts/flatten-export-segments.mjs",
     "start": "next start",
     "lint": "eslint"

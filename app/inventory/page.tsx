@@ -16,25 +16,11 @@ import { useAdminSession } from "@/components/auth/AuthProvider";
 import { ApiError } from "@/lib/api/client";
 import { listAllAdminProducts, type ApiProduct } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
+import { STOCK_FILTERS, stockStatus } from "@/lib/inventory";
 
 // Stock is the shared Inventory record (quantity, reservedQuantity) returned with each product.
 // It's edited on the product form; the API has no separate inventory endpoint or stock filter,
 // so the status filter below runs on the loaded list.
-const stockFilters = ["In stock", "Low stock", "Out of stock", "Not tracked"];
-const LOW_STOCK = 15;
-
-function available(p: ApiProduct): number | null {
-  return p.inventory ? p.inventory.quantity - p.inventory.reservedQuantity : null;
-}
-
-function stockStatus(p: ApiProduct): (typeof stockFilters)[number] {
-  const units = available(p);
-  if (units === null) return "Not tracked";
-  if (units <= 0) return "Out of stock";
-  if (units <= LOW_STOCK) return "Low stock";
-  return "In stock";
-}
-
 export default function InventoryPage() {
   const { logout } = useAdminSession();
   const [search, setSearch] = useState("");
@@ -157,7 +143,7 @@ export default function InventoryPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchBar placeholder="Search products or SKU..." value={search} onChange={setSearch} className="sm:w-72" />
-        <FilterDropdown label="Stock status" value={stockFilter} options={stockFilters} onChange={setStockFilter} />
+        <FilterDropdown label="Stock status" value={stockFilter} options={[...STOCK_FILTERS]} onChange={setStockFilter} />
       </div>
 
       {content}

@@ -8,9 +8,10 @@ export function routePath(pathname: string): string {
 }
 
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+  // Prices are stored and shown in rupees, matching the storefront.
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: "USD",
+    currency: "INR",
   }).format(value);
 }
 
@@ -20,4 +21,10 @@ export function formatDate(value: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -1,22 +1,20 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Package,
-  ShoppingCart,
-  Users,
-  DollarSign,
-  Plus,
-  ImageIcon,
-  FolderPlus,
-  AlertTriangle,
-  Handshake,
-  TrendingUp,
-} from "lucide-react";
+import { AlertTriangle, FolderTree, ImageIcon, FolderPlus, Package, PackageX, Plus, PlugZap } from "lucide-react";
 import { StatCard } from "@/components/ui/StatCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { SalesChart } from "@/components/dashboard/SalesChart";
 import { Button } from "@/components/ui/Button";
-import { dashboardStats, lowStockProducts, mockB2BEnquiries, mockOrders } from "@/lib/mock-data";
-import { formatCurrency } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { useAdminSession } from "@/components/auth/AuthProvider";
+import { ApiError } from "@/lib/api/client";
+import { listAdminCategories, type ApiCategory } from "@/lib/api/categories";
+import { listAllAdminProducts, type ApiProduct } from "@/lib/api/products";
+import { getSessionToken } from "@/lib/auth/session";
+import { availableUnits, LOW_STOCK_THRESHOLD, summarizeCatalog } from "@/lib/inventory";
+import { formatDate } from "@/lib/utils";
 
 const quickActions = [
   { label: "Add Product", href: "/products/new", icon: Plus },
@@ -24,41 +22,108 @@ const quickActions = [
   { label: "Add Category", href: "/categories", icon: FolderPlus },
 ];
 
+const STATUS_LABELS = { ACTIVE: "Active", DRAFT: "Draft", ARCHIVED: "Archived" } as const;
+
+type Loaded = { key: number; products: ApiProduct[]; categories: ApiCategory[] } | { key: number; error: ApiError };
+
+// Everything here comes from the live API. Orders, revenue, customers and B2B enquiries have no
+// endpoints yet, so they are not shown at all (and no numbers are made up for them).
 export default function DashboardPage() {
-  const recentOrders = mockOrders.slice(0, 5);
-  const recentEnquiries = mockB2BEnquiries.slice(0, 5);
+  const { logout } = useAdminSession();
+  const [reloadCount, setReloadCount] = useState(0);
+  const [result, setResult] = useState<Loaded | null>(null);
+  const isLoading = result?.key !== reloadCount;
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Welcome back</h1>
-        <p className="mt-1 text-sm text-zinc-500">Here&apos;s what&apos;s happening across retail and B2B today.</p>
-      </div>
+  useEffect(() => {
+    const controller = new AbortController();
+    const key = reloadCount;
+    const token = getSessionToken() ?? "";
+    Promise.all([listAllAdminProducts(token, controller.signal), listAdminCategories(token, controller.signal)])
+      .then(([products, categories]) => setResult({ key, products, categories }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't load the dashboard.");
+        if (apiError.status === 401) return logout();
+        setResult({ key, error: apiError });
+      });
+    return () => controller.abort();
+  }, [reloadCount, logout]);
 
-      <div>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Retail</h2>
+  const summary = useMemo(() => (result && "products" in result ? summarizeCatalog(result.products) : null), [result]);
+  const categoryCount = result && "categories" in result ? result.categories.length : 0;
+
+  let content;
+  if (isLoading || !result) {
+    content = <LoadingState label="Loading dashboard..." />;
+  } else if ("error" in result || !summary) {
+    content = (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Couldn't load the dashboard"
+        description={"error" in result ? result.error.message : undefined}
+        action={
+          <Button variant="secondary" onClick={() => setReloadCount((n) => n + 1)}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  } else {
+    content = (
+      <>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total Products" value={dashboardStats.totalProducts.toString()} change="+4 this week" icon={Package} />
-          <StatCard label="Retail Orders" value={dashboardStats.retailOrders.toString()} change="+12% vs last week" icon={ShoppingCart} />
-          <StatCard label="Retail Revenue" value={formatCurrency(dashboardStats.retailRevenue)} change="+8.2% vs last week" icon={DollarSign} />
-          <StatCard label="Customers" value={dashboardStats.customers.toLocaleString()} change="+38 this week" icon={Users} />
+          <StatCard
+            label="Products"
+            value={summary.total.toString()}
+            note={`${summary.active} active · ${summary.draft} draft · ${summary.archived} archived`}
+            icon={Package}
+          />
+          <StatCard label="Categories" value={categoryCount.toString()} icon={FolderTree} />
+          <StatCard
+            label="Low stock"
+            value={summary.lowStock.toString()}
+            note={`Active products with ${LOW_STOCK_THRESHOLD} or fewer units`}
+            icon={AlertTriangle}
+          />
+          <StatCard
+            label="Out of stock"
+            value={summary.outOfStock.toString()}
+            note={summary.notTracked ? `${summary.notTracked} active product(s) don't track stock` : undefined}
+            icon={PackageX}
+          />
         </div>
-      </div>
 
-      <div>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">B2B</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <StatCard label="New B2B Enquiries" value={dashboardStats.newB2bEnquiries.toString()} change="Since yesterday" icon={Handshake} />
-          <StatCard label="Active B2B Leads" value={dashboardStats.activeB2bLeads.toString()} change="In progress" trend="up" icon={TrendingUp} />
-        </div>
-      </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-lg border border-zinc-200 bg-white lg:col-span-2">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">Needs restocking</h2>
+              <Link href="/inventory" className="text-sm font-medium text-zinc-600 hover:text-zinc-900">
+                Inventory
+              </Link>
+            </div>
+            {summary.needsRestock.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-zinc-500">
+                {summary.active === 0 ? "No active products yet." : "Every stock-tracked active product has enough units."}
+              </p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-zinc-100">
+                {summary.needsRestock.slice(0, 8).map((product) => {
+                  const units = availableUnits(product) ?? 0;
+                  return (
+                    <li key={product.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                      <Link href={`/products/${product.id}/edit`} className="truncate font-medium text-zinc-800 hover:underline">
+                        {product.name}
+                      </Link>
+                      <span className={units <= 0 ? "font-medium text-red-600" : "font-medium text-amber-600"}>
+                        {units <= 0 ? "Out of stock" : `${units} left`}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <SalesChart />
-        </div>
-
-        <div className="flex flex-col gap-4">
           <div className="rounded-lg border border-zinc-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-zinc-900">Quick actions</h2>
             <div className="flex flex-col gap-2">
@@ -71,78 +136,59 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
+        </div>
 
-          <div className="rounded-lg border border-zinc-200 bg-white p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <h2 className="text-sm font-semibold text-zinc-900">Low stock products</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-zinc-200 bg-white">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">Recently added products</h2>
+              <Link href="/products" className="text-sm font-medium text-zinc-600 hover:text-zinc-900">
+                View all
+              </Link>
             </div>
-            <ul className="flex flex-col divide-y divide-zinc-100">
-              {lowStockProducts.map((product) => (
-                <li key={product.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-zinc-700">{product.name}</span>
-                  <span className="font-medium text-amber-600">{product.stock} left</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-zinc-200 bg-white">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
-            <h2 className="text-sm font-semibold text-zinc-900">Recent retail orders</h2>
-            <Link href="/orders" className="text-sm font-medium text-zinc-600 hover:text-zinc-900">
-              View all
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
-                  <th className="px-5 py-2.5 font-medium">Order</th>
-                  <th className="px-5 py-2.5 font-medium">Customer</th>
-                  <th className="px-5 py-2.5 font-medium">Total</th>
-                  <th className="px-5 py-2.5 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentOrders.map((order) => (
-                  <tr key={order.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
-                    <td className="px-5 py-3 font-medium text-zinc-900">{order.id}</td>
-                    <td className="px-5 py-3 text-zinc-600">{order.customer}</td>
-                    <td className="px-5 py-3 text-zinc-700">{formatCurrency(order.total)}</td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={order.status} />
-                    </td>
-                  </tr>
+            {summary.recent.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-zinc-500">No products yet. Add your first one to get started.</p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-zinc-100">
+                {summary.recent.map((product) => (
+                  <li key={product.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                    <div className="min-w-0">
+                      <Link href={`/products/${product.id}/edit`} className="block truncate font-medium text-zinc-800 hover:underline">
+                        {product.name}
+                      </Link>
+                      <p className="truncate text-xs text-zinc-400">
+                        {product.category.name} · added {formatDate(product.createdAt)}
+                      </p>
+                    </div>
+                    <StatusBadge status={STATUS_LABELS[product.status]} />
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+            )}
           </div>
-        </div>
 
-        <div className="rounded-lg border border-zinc-200 bg-white">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
-            <h2 className="text-sm font-semibold text-zinc-900">B2B enquiries</h2>
-            <Link href="/b2b-enquiries" className="text-sm font-medium text-zinc-600 hover:text-zinc-900">
-              View all
-            </Link>
+          <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-zinc-300 bg-white p-5">
+            <div className="flex items-center gap-2">
+              <PlugZap className="h-4 w-4 text-zinc-400" />
+              <h2 className="text-sm font-semibold text-zinc-900">Orders, customers and B2B</h2>
+            </div>
+            <p className="text-sm text-zinc-500">
+              These aren&apos;t connected to the API yet, so no numbers are shown here. Orders, revenue, customer counts and B2B
+              enquiries will appear on this dashboard once their endpoints exist.
+            </p>
           </div>
-          <ul className="flex flex-col divide-y divide-zinc-100">
-            {recentEnquiries.map((enquiry) => (
-              <li key={enquiry.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-zinc-800">{enquiry.companyName}</p>
-                  <p className="truncate text-xs text-zinc-400">{enquiry.requirement}</p>
-                </div>
-                <StatusBadge status={enquiry.status} />
-              </li>
-            ))}
-          </ul>
         </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
+        <p className="mt-1 text-sm text-zinc-500">Live catalogue and stock from the Chamaro API.</p>
       </div>
+      {content}
     </div>
   );
 }

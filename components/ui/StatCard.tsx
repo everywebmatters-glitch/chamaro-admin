@@ -7,15 +7,18 @@ interface StatCardProps {
   value: string;
   change?: string;
   trend?: "up" | "down";
+  // Neutral supporting text (use `change` only for a real up/down movement).
+  note?: string;
   icon: ComponentType<{ className?: string }>;
 }
 
-export function StatCard({ label, value, change, trend, icon: Icon }: StatCardProps) {
+export function StatCard({ label, value, change, trend, note, icon: Icon }: StatCardProps) {
   return (
     <div className="flex items-start justify-between rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex flex-col gap-1">
         <span className="text-sm text-zinc-500">{label}</span>
         <span className="text-2xl font-semibold tracking-tight text-zinc-900">{value}</span>
+        {note && <span className="text-xs text-zinc-500">{note}</span>}
         {change && (
           <span
             className={cn(
