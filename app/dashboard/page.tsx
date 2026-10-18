@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, FolderTree, ImageIcon, FolderPlus, Package, PackageX, Plus, PlugZap } from "lucide-react";
+import { AlertTriangle, Clock, FolderTree, ImageIcon, FolderPlus, Package, PackageX, Plus, ShoppingCart } from "lucide-react";
 import { StatCard } from "@/components/ui/StatCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
@@ -11,10 +11,12 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { useAdminSession } from "@/components/auth/AuthProvider";
 import { ApiError } from "@/lib/api/client";
 import { listAdminCategories, type ApiCategory } from "@/lib/api/categories";
+import { listAdminOrders, type ApiOrder } from "@/lib/api/orders";
 import { listAllAdminProducts, type ApiProduct } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { availableUnits, LOW_STOCK_THRESHOLD, summarizeCatalog } from "@/lib/inventory";
-import { formatDate } from "@/lib/utils";
+import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_TONES, shortOrderId } from "@/lib/orders";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 const quickActions = [
   { label: "Add Product", href: "/products/new", icon: Plus },
@@ -26,12 +28,14 @@ const STATUS_LABELS = { ACTIVE: "Active", DRAFT: "Draft", ARCHIVED: "Archived" }
 
 type Loaded = { key: number; products: ApiProduct[]; categories: ApiCategory[] } | { key: number; error: ApiError };
 
-// Everything here comes from the live API. Orders, revenue, customers and B2B enquiries have no
-// endpoints yet, so they are not shown at all (and no numbers are made up for them).
+// Everything here comes from the live API. Customers and B2B enquiries have no endpoints yet, so they are not
+// shown (and no numbers are made up for them). There is no revenue figure: no order is paid yet.
+type OrdersLoaded = { key: number; total: number; awaitingPayment: number; recent: ApiOrder[] } | { key: number; error: ApiError };
 export default function DashboardPage() {
   const { logout } = useAdminSession();
   const [reloadCount, setReloadCount] = useState(0);
   const [result, setResult] = useState<Loaded | null>(null);
+  const [orders, setOrders] = useState<OrdersLoaded | null>(null);
   const isLoading = result?.key !== reloadCount;
 
   useEffect(() => {
@@ -48,6 +52,27 @@ export default function DashboardPage() {
       });
     return () => controller.abort();
   }, [reloadCount, logout]);
+
+  // Orders load separately, so a problem there never hides the catalogue figures.
+  useEffect(() => {
+    const controller = new AbortController();
+    const key = reloadCount;
+    const token = getSessionToken() ?? "";
+    Promise.all([
+      listAdminOrders(token, { page: 1, limit: 5 }, controller.signal),
+      listAdminOrders(token, { page: 1, limit: 1, paymentStatus: "UNPAID", status: "PENDING" }, controller.signal),
+    ])
+      .then(([all, unpaid]) => setOrders({ key, total: all.meta?.total ?? all.orders.length, awaitingPayment: unpaid.meta?.total ?? unpaid.orders.length, recent: all.orders }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't load orders.");
+        if (apiError.status === 401) return logout();
+        setOrders({ key, error: apiError });
+      });
+    return () => controller.abort();
+  }, [reloadCount, logout]);
+
+  const ordersReady = orders && orders.key === reloadCount ? orders : null;
 
   const summary = useMemo(() => (result && "products" in result ? summarizeCatalog(result.products) : null), [result]);
   const categoryCount = result && "categories" in result ? result.categories.length : 0;
@@ -91,6 +116,11 @@ export default function DashboardPage() {
             note={summary.notTracked ? `${summary.notTracked} active product(s) don't track stock` : undefined}
             icon={PackageX}
           />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Orders" value={ordersReady && "total" in ordersReady ? ordersReady.total.toString() : "—"} note={ordersReady && "error" in ordersReady ? "Couldn't load orders" : undefined} icon={ShoppingCart} />
+          <StatCard label="Awaiting payment" value={ordersReady && "awaitingPayment" in ordersReady ? ordersReady.awaitingPayment.toString() : "—"} note="Pending and unpaid" icon={Clock} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -167,15 +197,39 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-zinc-300 bg-white p-5">
-            <div className="flex items-center gap-2">
-              <PlugZap className="h-4 w-4 text-zinc-400" />
-              <h2 className="text-sm font-semibold text-zinc-900">Orders, customers and B2B</h2>
+          <div className="rounded-lg border border-zinc-200 bg-white">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">Recent orders</h2>
+              <Link href="/orders" className="text-sm font-medium text-zinc-600 hover:text-zinc-900">
+                View all
+              </Link>
             </div>
-            <p className="text-sm text-zinc-500">
-              These aren&apos;t connected to the API yet, so no numbers are shown here. Orders, revenue, customer counts and B2B
-              enquiries will appear on this dashboard once their endpoints exist.
-            </p>
+            {!ordersReady ? (
+              <p className="px-5 py-6 text-sm text-zinc-500">Loading orders...</p>
+            ) : "error" in ordersReady ? (
+              <p className="px-5 py-6 text-sm text-red-600">Couldn&apos;t load orders: {ordersReady.error.message}</p>
+            ) : ordersReady.recent.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-zinc-500">No orders yet. Orders appear here once customers place them.</p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-zinc-100">
+                {ordersReady.recent.map((order) => (
+                  <li key={order.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                    <div className="min-w-0">
+                      <Link href="/orders" className="block truncate font-medium text-zinc-800 hover:underline">
+                        {shortOrderId(order.id)} · {order.customer.user.name}
+                      </Link>
+                      <p className="truncate text-xs text-zinc-400">
+                        {formatCurrency(Number(order.total))} · {formatDate(order.createdAt)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <StatusBadge status={PAYMENT_STATUS_LABELS[order.paymentStatus]} tone={PAYMENT_TONES[order.paymentStatus]} />
+                      <StatusBadge status={ORDER_STATUS_LABELS[order.status]} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </>

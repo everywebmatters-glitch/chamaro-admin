@@ -39,7 +39,14 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export async function apiRequest<T>(path: string, { method = "GET", body, token, signal }: RequestOptions = {}): Promise<T> {
+export interface PageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+async function send<T>(path: string, { method = "GET", body, token, signal }: RequestOptions = {}): Promise<{ data: T; meta?: PageMeta }> {
   if (!API_BASE_URL) {
     throw new ApiError(0, "API_NOT_CONFIGURED", "NEXT_PUBLIC_API_URL is not set for the Admin app.");
   }
@@ -65,7 +72,7 @@ export async function apiRequest<T>(path: string, { method = "GET", body, token,
   }
 
   const payload = (await response.json().catch(() => null)) as
-    | { success?: boolean; data?: T; error?: { code?: string; message?: string } }
+    | { success?: boolean; data?: T; meta?: PageMeta; error?: { code?: string; message?: string } }
     | null;
 
   if (!response.ok || payload?.success === false) {
@@ -75,7 +82,16 @@ export async function apiRequest<T>(path: string, { method = "GET", body, token,
     throw new ApiError(status, payload?.error?.code ?? `HTTP_${status}`, message);
   }
 
-  return payload?.data as T;
+  return { data: payload?.data as T, meta: payload?.meta };
+}
+
+export async function apiRequest<T>(path: string, options?: RequestOptions): Promise<T> {
+  return (await send<T>(path, options)).data;
+}
+
+// For list endpoints: also returns the page numbers and total the API reports.
+export function apiRequestWithMeta<T>(path: string, options?: RequestOptions): Promise<{ data: T; meta?: PageMeta }> {
+  return send<T>(path, options);
 }
 
 // The API returns its own files (e.g. uploaded images) as root-relative paths like /api/v1/media/:id;
