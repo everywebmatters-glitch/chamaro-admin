@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, Plus, SearchX, Trash2 } from "lucide-react";
@@ -29,7 +29,7 @@ import {
 } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
-import { fromVariantOptions, productTotals, splitImages, toVariantOptions, variantName } from "@/lib/variant-form";
+import { fromVariantOptions, moveItem, productTotals, sortByPosition, splitImages, toVariantOptions, variantName } from "@/lib/variant-form";
 import { detailsToSave, withPresetDetails } from "@/lib/product-details";
 import { ColourVariantCard } from "./ColourVariantCard";
 
@@ -132,9 +132,11 @@ function uploadErrorMessage(file: File, error: ApiError): string {
 function initialAttributes(product?: ApiProduct): VariantRow[] {
   if (!product) return [blankAttribute()];
   const images = [...product.images].sort((a, b) => a.position - b.position);
-  const { main, byVariant } = splitImages(images, product.variants);
+  // The admin's saved order; the API returns variants in no particular order.
+  const variants = sortByPosition(product.variants);
+  const { main, byVariant } = splitImages(images, variants);
 
-  const rows: VariantRow[] = product.variants.map((variant, index) => {
+  const rows: VariantRow[] = variants.map((variant, index) => {
     const fields = fromVariantOptions(variant.options, variant.name);
     return {
       key: variant.id,
@@ -272,6 +274,65 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     clearFieldError("variants");
   }
 
+  // Drag to reorder attributes: the grip captures the pointer (mouse or touch) and the list reorders as it
+  // moves, so the cards show the new order while dragging.
+  const attributeListRef = useRef<HTMLUListElement>(null);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+
+  function moveAttribute(from: number, to: number) {
+    setVariants((rows) => moveItem(rows, from, to));
+    clearFieldError("variants");
+  }
+
+  const pointerY = useRef(0);
+
+  function dragTo(clientY: number) {
+    const list = attributeListRef.current;
+    const from = variants.findIndex((row) => row.key === draggingKey);
+    if (!list || from < 0) return;
+    // The new index is past every other card the pointer has moved into. A card counts once the pointer is
+    // a little way into it (not its middle): attribute cards are taller than a phone screen.
+    let to = 0;
+    Array.from(list.children).forEach((card, index) => {
+      if (index === from) return;
+      const box = card.getBoundingClientRect();
+      const threshold = index < from ? box.bottom - Math.min(box.height / 2, 48) : box.top + Math.min(box.height / 2, 48);
+      if (clientY > threshold) to = index < from ? index + 1 : index;
+    });
+    if (to !== from) moveAttribute(from, to);
+  }
+
+  // While dragging near the top or bottom of the screen, scroll so far-away positions can be reached.
+  useEffect(() => {
+    if (!draggingKey) return;
+    let frame = 0;
+    const EDGE = 80;
+    const tick = () => {
+      const y = pointerY.current;
+      const speed = y < EDGE ? -(EDGE - y) / 4 : y > window.innerHeight - EDGE ? (y - (window.innerHeight - EDGE)) / 4 : 0;
+      if (speed) window.scrollBy(0, speed);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [draggingKey]);
+
+  const dragHandle = (key: string) => ({
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      pointerY.current = event.clientY;
+      setDraggingKey(key);
+    },
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      if (draggingKey !== key) return;
+      pointerY.current = event.clientY;
+      dragTo(event.clientY);
+    },
+    onPointerUp: () => setDraggingKey(null),
+    onPointerCancel: () => setDraggingKey(null),
+  });
+
   function updatePhotos(key: string, change: (photos: ImageRow[]) => ImageRow[]) {
     setVariants((rows) => rows.map((row) => (row.key === key ? { ...row, photos: change(row.photos) } : row)));
   }
@@ -365,7 +426,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     else if (uploading) errors.variants = "Wait for the photos to finish uploading.";
     else if (variants.some((row) => row.photos.some((photo) => !photo.mediaId))) errors.variants = "Remove the external image (not stored by Chamaro) and upload a replacement.";
     else if (imageCount > MAX_IMAGES) errors.variants = `A product can have up to ${MAX_IMAGES} photos across all its attributes.`;
-    for (const row of errors.variants ? [] : variants) {
+    for (const [position, row] of (errors.variants ? [] : variants).entries()) {
       const colour = row.colour.trim();
       const variantSku = row.sku.trim();
       const label = variantName({ colour, other: row.other }) || "This attribute";
@@ -391,6 +452,8 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
             imageIds: row.photos.map((photo) => photo.mediaId!),
             ...(compareValue ? { compareAtPrice: Number(compareValue) } : {}),
             stock: Number(stockValue),
+            // The order the admin arranged (drag to reorder); the storefront lists attributes in it.
+            position,
           });
       if (!problem && !options) problem = `Write the extra options for "${label}" as Name: Value, e.g. Size: L.`;
       if (problem) {
@@ -679,12 +742,12 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
 
         <FormSection
           title="Attributes"
-          description={`Each attribute is one colour of the product, sold with its own SKU, price, stock and photos; customers pick it from the colour swatches. The first active attribute's price and photo are shown in product listings, and the product's stock is the total of its active attributes.${
+          description={`Each attribute is one colour of the product, sold with its own SKU, price, stock and photos; customers pick it from the colour swatches. Drag the handle to reorder them: the storefront shows them in this order, and the first active attribute's price and photo are shown in product listings. The product's stock is the total of its active attributes.${
             product?.inventory?.reservedQuantity ? ` ${product.inventory.reservedQuantity} unit(s) are reserved in open carts/orders.` : ""
           }`}
         >
           {variants.length > 0 && (
-            <ul className="flex flex-col gap-3">
+            <ul ref={attributeListRef} className="flex flex-col gap-3">
               {variants.map((row, index) => (
                 <ColourVariantCard
                   key={row.key}
@@ -693,6 +756,10 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
                   productName={name}
                   canAddPhotos={imageCount < MAX_IMAGES}
                   canRemove={variants.length > 1}
+                  dragging={draggingKey === row.key}
+                  dragHandle={variants.length > 1 ? dragHandle(row.key) : undefined}
+                  onMoveUp={index > 0 ? () => moveAttribute(index, index - 1) : undefined}
+                  onMoveDown={index < variants.length - 1 ? () => moveAttribute(index, index + 1) : undefined}
                   onChange={(patch) => updateVariant(row.key, patch)}
                   onPhotos={(change) => updatePhotos(row.key, change)}
                   onUpload={(files) => uploadVariantPhotos(row.key, files)}

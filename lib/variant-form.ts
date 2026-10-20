@@ -10,6 +10,7 @@
 //   compareAtPrice  the variant's struck-through price (number)
 //   stock      units of this variant (integer). The API only enforces the product's stock, which
 //              the form saves as the total of its active variants.
+//   position   the variant's place in the admin's order (0 = first); the API keeps no order itself.
 //   any other  extra options such as Size, shown as pills
 import type { ApiProductImage } from "@/lib/api/products";
 
@@ -18,8 +19,30 @@ export const HEX_KEY = "ColorHex";
 export const IMAGES_KEY = "images";
 export const COMPARE_KEY = "compareAtPrice";
 export const STOCK_KEY = "stock";
+export const POSITION_KEY = "position";
 // Keys that hold data rather than a customer-facing option
-const DATA_KEYS = new Set([IMAGES_KEY, COMPARE_KEY, STOCK_KEY]);
+const DATA_KEYS = new Set([IMAGES_KEY, COMPARE_KEY, STOCK_KEY, POSITION_KEY]);
+
+// Variants in the admin's saved order (options.position); ones without a position keep the API's order, after them.
+export function sortByPosition<T extends { options: Record<string, unknown> }>(variants: T[]): T[] {
+  const rank = (variant: T) => {
+    const value = variant.options?.[POSITION_KEY];
+    return typeof value === "number" && Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+  };
+  return variants
+    .map((variant, index) => ({ variant, index }))
+    .sort((a, b) => rank(a.variant) - rank(b.variant) || a.index - b.index)
+    .map(({ variant }) => variant);
+}
+
+// The list with one item moved from one index to another.
+export function moveItem<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || from >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(Math.max(0, Math.min(to, next.length)), 0, item);
+  return next;
+}
 
 const COLOUR_KEYS = /^colou?r$/i;
 const HEX_KEYS = /^colou?r ?hex$/i;
@@ -49,6 +72,7 @@ export interface VariantFields {
   imageIds: string[];
   compareAtPrice?: number;
   stock?: number;
+  position?: number;
 }
 
 function numberOf(value: unknown): number | undefined {
@@ -112,6 +136,7 @@ export function toVariantOptions(fields: VariantFields): Record<string, string |
     ...(fields.imageIds.length ? { [IMAGES_KEY]: fields.imageIds } : {}),
     ...(fields.compareAtPrice !== undefined ? { [COMPARE_KEY]: fields.compareAtPrice } : {}),
     ...(fields.stock !== undefined ? { [STOCK_KEY]: fields.stock } : {}),
+    ...(fields.position !== undefined ? { [POSITION_KEY]: fields.position } : {}),
   };
 }
 

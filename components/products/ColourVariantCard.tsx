@@ -1,7 +1,8 @@
 "use client";
 
-import { useId } from "react";
-import { ImagePlus, Loader2, Trash2, X } from "lucide-react";
+import { useId, type PointerEventHandler } from "react";
+import { ChevronDown, ChevronUp, GripVertical, ImagePlus, Loader2, Trash2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ImagePreview } from "@/components/ui/ImagePreview";
 import { IMAGE_ACCEPT } from "@/lib/api/media";
 import type { ProductStatusCode } from "@/lib/api/products";
@@ -22,6 +23,16 @@ interface ColourVariantCardProps {
   canAddPhotos: boolean;
   // A product keeps at least one attribute (it holds the price, stock and photos).
   canRemove: boolean;
+  // Reordering: the grip's pointer handlers (drag) and step buttons (keyboard); absent when there's one attribute.
+  dragging?: boolean;
+  dragHandle?: {
+    onPointerDown: PointerEventHandler<HTMLButtonElement>;
+    onPointerMove: PointerEventHandler<HTMLButtonElement>;
+    onPointerUp: PointerEventHandler<HTMLButtonElement>;
+    onPointerCancel: PointerEventHandler<HTMLButtonElement>;
+  };
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   onChange: (patch: Partial<VariantRow>) => void;
   onPhotos: (change: (photos: ImageRow[]) => ImageRow[]) => void;
   onUpload: (files: File[]) => void;
@@ -29,7 +40,21 @@ interface ColourVariantCardProps {
 }
 
 // One attribute (colour) of a product: swatch, SKU, prices, stock, extra options, status and its own photos.
-export function ColourVariantCard({ index, row, productName, canAddPhotos, canRemove, onChange, onPhotos, onUpload, onRemove }: ColourVariantCardProps) {
+export function ColourVariantCard({
+  index,
+  row,
+  productName,
+  canAddPhotos,
+  canRemove,
+  dragging = false,
+  dragHandle,
+  onMoveUp,
+  onMoveDown,
+  onChange,
+  onPhotos,
+  onUpload,
+  onRemove,
+}: ColourVariantCardProps) {
   const id = useId();
   // The shade the storefront will show: the picked one, else the default for the colour name.
   const autoShade = suggestedShade(row.colour);
@@ -38,8 +63,27 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, canRe
   const uploading = row.photos.some((photo) => photo.uploading);
 
   return (
-    <li className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-zinc-50/60 p-4">
+    <li
+      className={cn(
+        "flex flex-col gap-4 rounded-lg border bg-zinc-50/60 p-4 transition-shadow",
+        dragging ? "relative z-10 border-zinc-900 bg-white shadow-lg" : "border-zinc-200"
+      )}
+    >
       <div className="flex items-center gap-3">
+        {dragHandle && (
+          <button
+            type="button"
+            {...dragHandle}
+            aria-label={`Drag to reorder ${title}`}
+            title="Drag to reorder"
+            className={cn(
+              "-ml-1 flex h-8 w-6 shrink-0 touch-none select-none items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700",
+              dragging ? "cursor-grabbing" : "cursor-grab"
+            )}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
         <span
           className="h-7 w-7 shrink-0 rounded-full border border-black/10 shadow-inner"
           style={{ background: shade }}
@@ -49,6 +93,30 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, canRe
           {title}
           {index === 0 && <span className="ml-2 text-xs font-normal text-zinc-400">Shown first</span>}
         </p>
+        {(onMoveUp || onMoveDown) && (
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!onMoveUp}
+              aria-label={`Move ${title} up`}
+              title="Move up"
+              className="flex h-8 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!onMoveDown}
+              aria-label={`Move ${title} down`}
+              title="Move down"
+              className="flex h-8 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {canRemove && (
           <button
             type="button"

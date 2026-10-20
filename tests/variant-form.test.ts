@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   fromVariantOptions,
   parseOtherOptions,
+  moveItem,
   productTotals,
+  sortByPosition,
   splitImages,
   suggestedShade,
   toVariantOptions,
@@ -61,6 +63,26 @@ test("productTotals: first active attribute's prices, total stock of active attr
     { price: 7499, compareAtPrice: 9999, quantity: 10 }
   );
   assert.deepEqual(productTotals([{ status: "DRAFT", price: 5000, stock: 3 }]), { price: 5000, compareAtPrice: undefined, quantity: 0 });
+});
+
+test("position is saved, never an extra option, and drives the order", () => {
+  assert.deepEqual(toVariantOptions({ colour: "Sunset", hex: "", other: "", imageIds: [], position: 2 }), { Color: "Sunset", position: 2 });
+  assert.equal(parseOtherOptions("position: 1"), null);
+  assert.equal(fromVariantOptions({ Color: "Black", position: 1 }, "Black").other, "");
+  const sorted = sortByPosition([
+    { id: "a", options: { position: 2 } },
+    { id: "b", options: {} },
+    { id: "c", options: { position: 0 } },
+    { id: "d", options: { position: 1 } },
+  ]);
+  assert.deepEqual(sorted.map((v) => v.id), ["c", "d", "a", "b"]);
+});
+
+test("moveItem moves one item and leaves the rest in order", () => {
+  assert.deepEqual(moveItem(["a", "b", "c", "d"], 0, 2), ["b", "c", "a", "d"]);
+  assert.deepEqual(moveItem(["a", "b", "c", "d"], 3, 0), ["d", "a", "b", "c"]);
+  assert.deepEqual(moveItem(["a", "b"], 1, 1), ["a", "b"]);
+  assert.deepEqual(moveItem(["a", "b"], 0, 9), ["b", "a"]);
 });
 
 test("splitImages separates the main gallery from each variant's photos, in the variant's order", () => {
