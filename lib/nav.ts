@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Images,
   FileText,
+  MessageSquare,
   LayoutTemplate,
   Settings,
   ShieldCheck,
@@ -46,6 +47,7 @@ export const navSections: NavSection[] = [
       { label: "Retail Orders", href: "/orders", icon: ShoppingCart },
       { label: "B2B Enquiries", href: "/b2b-enquiries", icon: Handshake },
       { label: "Customers", href: "/customers", icon: Users },
+      { label: "Reviews", href: "/reviews", icon: MessageSquare },
     ],
   },
   {
@@ -77,6 +79,7 @@ export const pageTitles: Record<string, string> = {
   "/orders": "Retail Orders",
   "/b2b-enquiries": "B2B Enquiries",
   "/customers": "Customers",
+  "/reviews": "Reviews",
   "/banners": "Banners",
   "/banners/new": "Add Banner",
   "/collection-section": "Collection Section",

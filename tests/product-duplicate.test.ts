@@ -8,7 +8,7 @@ const product = {
   createdAt: "", updatedAt: "", category: { id: "c1", name: "Chairs", slug: "chairs" },
   images: [{ id: "i1", mediaId: "m1", url: "/x", altText: "front", position: 0, isPrimary: true }, { id: "i2", mediaId: null, url: "https://old", altText: null, position: 1, isPrimary: false }],
   variants: [{ id: "v1", name: "Black", sku: "AERO-BLK", price: null, options: { Colour: "Black" }, status: "ACTIVE" }],
-  inventory: { id: "n1", quantity: 7, reservedQuantity: 2 },
+  shortDescription: "Short", infoBoxes: [{ title: "Shipping", text: "Fast" }], inventory: { id: "n1", quantity: 7, reservedQuantity: 2 },
 } as const;
 
 test("a copy is a draft with unique name, slug and variant SKUs and no product SKU", () => {
@@ -31,4 +31,10 @@ test("later attempts count up", () => {
   assert.equal(copy.name, "Aero Chair (Copy 3)");
   assert.equal(copy.slug, "aero-chair-copy-3");
   assert.equal(copy.variants![0].sku, "AERO-BLK-COPY-3");
+});
+
+test("the short description and the delivery boxes are copied", () => {
+  const copy = duplicateProductInput(product as never);
+  assert.equal(copy.shortDescription, "Short");
+  assert.deepEqual(copy.infoBoxes, [{ title: "Shipping", text: "Fast" }]);
 });

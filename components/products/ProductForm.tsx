@@ -31,6 +31,7 @@ import { getSessionToken } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 import { fromVariantOptions, moveItem, productTotals, sortByPosition, splitImages, toVariantOptions, variantName } from "@/lib/variant-form";
 import { detailsToSave, withPresetDetails } from "@/lib/product-details";
+import { infoBoxesToSave, MAX_BOX_TEXT, MAX_BOX_TITLE, MAX_SHORT_DESCRIPTION, readInfoBoxes, validateInfo } from "@/lib/product-info";
 import { ColourVariantCard } from "./ColourVariantCard";
 
 interface ProductFormProps {
@@ -38,7 +39,7 @@ interface ProductFormProps {
   productId?: string;
 }
 
-type Field = "name" | "slug" | "description" | "features" | "specifications" | "returnPolicy" | "warranty" | "categoryId" | "variants";
+type Field = "name" | "slug" | "description" | "shortDescription" | "infoBoxes" | "features" | "specifications" | "returnPolicy" | "warranty" | "categoryId" | "variants";
 type FieldErrors = Partial<Record<Field, string>>;
 
 export interface ImageRow {
@@ -399,6 +400,13 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     const description = text("description");
     if (description.length > MAX_DESCRIPTION) errors.description = `Use ${MAX_DESCRIPTION.toLocaleString()} characters or fewer.`;
 
+    const shortDescription = text("shortDescription");
+    const boxes: [{ title: string; text: string }, { title: string; text: string }] = [
+      { title: text("box1Title"), text: text("box1Text") },
+      { title: text("box2Title"), text: text("box2Text") },
+    ];
+    Object.assign(errors, validateInfo(shortDescription, boxes));
+
     const features = linesOf(String(form.get("features") ?? ""));
     errors.features = listProblem(features, "features");
 
@@ -493,6 +501,8 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
       // On edit an empty description clears it; the other optional fields can only be set.
       ...(description || product?.description ? { description } : {}),
       // Always sent, so clearing them in the form clears them in the storefront.
+      shortDescription,
+      infoBoxes: infoBoxesToSave(boxes),
       features,
       specifications,
       returnPolicy: disclaimer,
@@ -650,6 +660,49 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
             onBlur={() => setSlug((value) => toSlug(value))}
             required
           />
+        </FormSection>
+
+        <FormSection
+          title="Summary and delivery"
+          description="The line under the price, and the two boxes beside the Delivery & Return link on the product page. Leave anything empty to show the store's standard wording."
+        >
+          <Textarea
+            label="Short description"
+            name="shortDescription"
+            rows={2}
+            placeholder="One or two sentences shown under the price"
+            defaultValue={product?.shortDescription ?? ""}
+            maxLength={MAX_SHORT_DESCRIPTION}
+            hint="Leave empty to use the first sentence of the description."
+            error={fieldErrors.shortDescription}
+            onChange={() => clearFieldError("shortDescription")}
+          />
+          {([0, 1] as const).map((index) => {
+            const box = readInfoBoxes(product?.infoBoxes)[index];
+            return (
+              <div key={index} className="flex flex-col gap-3 rounded-md border border-zinc-200 p-3">
+                <p className="text-sm font-medium text-zinc-700">Box {index + 1}</p>
+                <Input
+                  label="Heading"
+                  name={`box${index + 1}Title`}
+                  placeholder={index === 0 ? "Delivery" : "Returns"}
+                  defaultValue={box.title}
+                  maxLength={MAX_BOX_TITLE}
+                  hint={index === 0 ? "e.g. Delivery, Shipping or anything else." : "e.g. Returns, Installation or anything else."}
+                  onChange={() => clearFieldError("infoBoxes")}
+                />
+                <Textarea
+                  label="Text"
+                  name={`box${index + 1}Text`}
+                  rows={3}
+                  defaultValue={box.text}
+                  maxLength={MAX_BOX_TEXT}
+                  error={index === 1 ? fieldErrors.infoBoxes : undefined}
+                  onChange={() => clearFieldError("infoBoxes")}
+                />
+              </div>
+            );
+          })}
         </FormSection>
 
         <FormSection

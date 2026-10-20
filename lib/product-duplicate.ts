@@ -16,6 +16,8 @@ export function duplicateProductInput(product: ApiProduct, attempt = 1): CreateP
     categoryId: product.categoryId,
     status: "DRAFT",
     ...(product.description ? { description: product.description } : {}),
+    ...(product.shortDescription ? { shortDescription: product.shortDescription } : {}),
+    ...(product.infoBoxes?.length ? { infoBoxes: product.infoBoxes.map(({ title, text }) => ({ title, text })) } : {}),
     ...(product.features ? { features: product.features } : {}),
     ...(product.materials ? { materials: product.materials } : {}),
     ...(product.specifications ? { specifications: product.specifications.map(({ label, value }) => ({ label, value })) } : {}),

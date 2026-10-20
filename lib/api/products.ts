@@ -35,6 +35,9 @@ export interface ApiProduct {
   name: string;
   slug: string;
   description: string | null;
+  // One line under the price, and the two Delivery & Return boxes (null until set: the storefront's wording shows)
+  shortDescription: string | null;
+  infoBoxes: { title: string; text: string }[] | null;
   // Storefront product-page tabs (null until set)
   features: string[] | null;
   materials: string[] | null;
@@ -93,6 +96,8 @@ export interface CreateProductInput {
   price: number; // >= 0, stored as DECIMAL(12,2)
   categoryId: string; // must reference an existing category, else 404 "Category not found"
   description?: string; // <= 50000
+  shortDescription?: string; // <= 500; "" clears it
+  infoBoxes?: { title: string; text: string }[]; // <= 2 boxes; [] = the storefront's wording
   features?: string[]; // <= 30 items, each 1..300
   materials?: string[]; // <= 30 items, each 1..300
   specifications?: ProductSpecification[]; // <= 50 rows
