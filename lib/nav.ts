@@ -56,6 +56,7 @@ export const navSections: NavSection[] = [
     items: [
       { label: "Banners", href: "/banners", icon: ImageIcon },
       { label: "Collection Section", href: "/collection-section", icon: LayoutTemplate },
+      { label: "Best Sellers", href: "/best-sellers", icon: LayoutTemplate },
       { label: "Pages", href: "/cms-pages", icon: FileText },
       { label: "Media", href: "/media", icon: Images },
     ],
@@ -83,6 +84,7 @@ export const pageTitles: Record<string, string> = {
   "/banners": "Banners",
   "/banners/new": "Add Banner",
   "/collection-section": "Collection Section",
+  "/best-sellers": "Best Sellers",
   "/cms-pages": "Pages",
   "/cms-pages/new": "Add Page",
   "/media": "Media Library",

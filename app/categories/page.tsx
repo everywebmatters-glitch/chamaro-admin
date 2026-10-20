@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertCircle, AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ImagePlus, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -14,7 +14,10 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { useAdminSession } from "@/components/auth/AuthProvider";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, resolveApiUrl } from "@/lib/api/client";
+import { createAdminCmsPage, listAdminCmsPages, setAdminCmsPagePublished, updateAdminCmsPage, type ApiCmsPage } from "@/lib/api/cms-pages";
+import { IMAGE_ACCEPT, imageFileProblem, uploadMedia } from "@/lib/api/media";
+import { CATEGORY_DISPLAY_PAGE_SLUG, fromPage, mergeWithCategories, toPageInput, type CategoryDisplayValue } from "@/lib/category-display";
 import {
   createAdminCategory,
   deleteAdminCategory,
@@ -50,6 +53,9 @@ export default function CategoriesPage() {
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState<ApiCategory | "new" | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // The storefront order and icons, kept as a published CMS page (see lib/category-display.ts).
+  const [cmsPage, setCmsPage] = useState<ApiCmsPage | null>(null);
+  const [display, setDisplay] = useState<CategoryDisplayValue[]>([]);
 
   const queryKey = JSON.stringify({ search: debouncedSearch, reloadCount });
   const isLoading = result?.key !== queryKey;
@@ -63,10 +69,17 @@ export default function CategoriesPage() {
     const controller = new AbortController();
     const key = queryKey;
     const token = getSessionToken() ?? "";
-    Promise.all([listAdminCategories(token, controller.signal, debouncedSearch || undefined), listAllAdminProducts(token, controller.signal)])
-      .then(([categories, products]) => {
+    Promise.all([
+      listAdminCategories(token, controller.signal, debouncedSearch || undefined),
+      listAllAdminProducts(token, controller.signal),
+      listAdminCmsPages(token, controller.signal),
+    ])
+      .then(([categories, products, { pages }]) => {
         const productCounts = new Map<string, number>();
         for (const p of products) productCounts.set(p.categoryId, (productCounts.get(p.categoryId) ?? 0) + 1);
+        const existing = pages.find((item) => item.slug === CATEGORY_DISPLAY_PAGE_SLUG) ?? null;
+        setCmsPage(existing);
+        setDisplay(fromPage(existing));
         setResult({ key, categories, productCounts });
       })
       .catch((error: unknown) => {
@@ -104,6 +117,33 @@ export default function CategoriesPage() {
     }
   }
 
+  // Saves the order and icons; the storefront only reads published pages.
+  async function saveDisplay(next: CategoryDisplayValue[]) {
+    const token = getSessionToken() ?? "";
+    const input = toPageInput(next);
+    let saved: ApiCmsPage = cmsPage ? await updateAdminCmsPage(token, cmsPage.id, input) : await createAdminCmsPage(token, input);
+    if (saved.status !== "PUBLISHED") saved = { ...saved, ...(await setAdminCmsPagePublished(token, saved.id, true)) };
+    setCmsPage(saved);
+    setDisplay(next);
+  }
+
+  const orderedRows = result && "categories" in result ? mergeWithCategories(display, result.categories) : [];
+  const iconOf = (slug: string) => display.find((item) => item.slug === slug)?.iconUrl ?? "";
+
+  async function move(index: number, by: -1 | 1) {
+    const target = index + by;
+    if (target < 0 || target >= orderedRows.length) return;
+    const next = orderedRows.map((row) => ({ slug: row.category.slug, iconUrl: row.iconUrl }));
+    [next[index], next[target]] = [next[target], next[index]];
+    try {
+      await saveDisplay(next);
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't save the order.");
+      if (apiError.status === 401) return logout();
+      setNotice({ tone: "error", text: `Couldn't save the order: ${apiError.message}` });
+    }
+  }
+
   const productCounts = result && "productCounts" in result ? result.productCounts : new Map<string, number>();
 
   const columns: DataTableColumn<ApiCategory>[] = [
@@ -111,9 +151,19 @@ export default function CategoriesPage() {
       key: "name",
       header: "Category",
       render: (c) => (
-        <div>
-          <p className="font-medium text-zinc-900">{c.name}</p>
-          <p className="text-xs text-zinc-400">/{c.slug}</p>
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50">
+            {iconOf(c.slug) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={iconOf(c.slug)} alt="" className="h-6 w-6 object-contain" />
+            ) : (
+              <span className="text-[9px] text-zinc-400">default</span>
+            )}
+          </span>
+          <div>
+            <p className="font-medium text-zinc-900">{c.name}</p>
+            <p className="text-xs text-zinc-400">/{c.slug}</p>
+          </div>
         </div>
       ),
     },
@@ -134,6 +184,34 @@ export default function CategoriesPage() {
       headerClassName: "text-right",
       render: (c) => (
         <div className="flex justify-end gap-1">
+          {(() => {
+            const index = orderedRows.findIndex((row) => row.category.id === c.id);
+            const locked = Boolean(debouncedSearch);
+            return (
+              <>
+                <button
+                  type="button"
+                  aria-label={`Move ${c.name} up`}
+                  title={locked ? "Clear the search to change the order" : "Move up"}
+                  disabled={locked || index <= 0}
+                  onClick={() => void move(index, -1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Move ${c.name} down`}
+                  title={locked ? "Clear the search to change the order" : "Move down"}
+                  disabled={locked || index === orderedRows.length - 1}
+                  onClick={() => void move(index, 1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+              </>
+            );
+          })()}
           <button
             type="button"
             aria-label={`Edit ${c.name}`}
@@ -180,7 +258,7 @@ export default function CategoriesPage() {
   } else {
     content = (
       <div className="rounded-lg border border-zinc-200 bg-white">
-        <DataTable columns={columns} data={result.categories} getRowKey={(c) => c.id} />
+        <DataTable columns={columns} data={orderedRows.map((row) => row.category)} getRowKey={(c) => c.id} />
       </div>
     );
   }
@@ -221,10 +299,25 @@ export default function CategoriesPage() {
       {editing !== null && (
         <CategoryModal
           category={editing === "new" ? undefined : editing}
+          iconUrl={editing === "new" ? "" : iconOf(editing.slug)}
           onClose={() => setEditing(null)}
-          onSaved={(saved, created) => {
+          onSaved={async (saved, created, iconUrl) => {
+            const previousSlug = editing === "new" ? undefined : editing.slug;
             setEditing(null);
-            setNotice({ tone: "success", text: `Category “${saved.name}” ${created ? "created" : "updated"}.` });
+            let text = `Category “${saved.name}” ${created ? "created" : "updated"}.`;
+            let tone: Notice["tone"] = "success";
+            // Keep the icon with the category (also when its URL handle changed) and add new ones at the end.
+            const rows = orderedRows.map((row) => ({ slug: row.category.slug === previousSlug ? saved.slug : row.category.slug, iconUrl: row.category.slug === previousSlug ? iconUrl : row.iconUrl }));
+            if (!rows.some((row) => row.slug === saved.slug)) rows.push({ slug: saved.slug, iconUrl });
+            if (JSON.stringify(rows) !== JSON.stringify(display)) {
+              try {
+                await saveDisplay(rows);
+              } catch (error) {
+                tone = "error";
+                text = `Category saved, but the icon and order couldn't be: ${error instanceof ApiError ? error.message : "unknown error"}`;
+              }
+            }
+            setNotice({ tone, text });
             setReloadCount((n) => n + 1);
           }}
           onUnauthorized={logout}
@@ -246,15 +339,40 @@ export default function CategoriesPage() {
 
 function CategoryModal({
   category,
+  iconUrl: initialIconUrl,
   onClose,
   onSaved,
   onUnauthorized,
 }: {
   category?: ApiCategory;
+  iconUrl: string;
   onClose: () => void;
-  onSaved: (category: ApiCategory, created: boolean) => void;
+  onSaved: (category: ApiCategory, created: boolean, iconUrl: string) => void;
   onUnauthorized: () => void;
 }) {
+  const [iconUrl, setIconUrl] = useState(initialIconUrl);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function uploadIcon(file: File | undefined) {
+    if (!file) return;
+    const problem = imageFileProblem(file);
+    if (problem) return setErrors((current) => ({ ...current, form: problem }));
+    setUploading(true);
+    setErrors((current) => ({ ...current, form: undefined }));
+    try {
+      const media = await uploadMedia(getSessionToken() ?? "", file);
+      // The storefront needs an absolute web address; uploaded files are served from the API's own origin.
+      setIconUrl(resolveApiUrl(media.url));
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Upload failed.");
+      if (apiError.status === 401) return onUnauthorized();
+      setErrors((current) => ({ ...current, form: apiError.message }));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const [name, setName] = useState(category?.name ?? "");
   const [slug, setSlug] = useState(category?.slug ?? "");
   const [slugEdited, setSlugEdited] = useState(Boolean(category));
@@ -286,7 +404,7 @@ function CategoryModal({
     try {
       const token = getSessionToken() ?? "";
       const saved = category ? await updateAdminCategory(token, category.id, input) : await createAdminCategory(token, input);
-      onSaved(saved, !category);
+      onSaved(saved, !category, iconUrl);
     } catch (error) {
       setSaving(false);
       const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't save the category.");
@@ -308,7 +426,7 @@ function CategoryModal({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => save()} disabled={saving}>
+          <Button variant="primary" onClick={() => save()} disabled={saving || uploading}>
             {saving ? "Saving..." : "Save"}
           </Button>
         </>
@@ -353,6 +471,29 @@ function CategoryModal({
           maxLength={MAX_DESCRIPTION}
           onChange={(e) => setDescription(e.target.value)}
         />
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-zinc-700">Icon</span>
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50">
+              {iconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={iconUrl} alt="" className="h-8 w-8 object-contain" />
+              ) : (
+                <span className="text-[10px] text-zinc-400">default</span>
+              )}
+            </span>
+            <input ref={fileInput} type="file" accept={IMAGE_ACCEPT} className="hidden" onChange={(e) => { void uploadIcon(e.target.files?.[0]); e.target.value = ""; }} />
+            <Button type="button" variant="secondary" disabled={uploading || saving} icon={uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} onClick={() => fileInput.current?.click()}>
+              {iconUrl ? "Change icon" : "Upload icon"}
+            </Button>
+            {iconUrl && (
+              <button type="button" aria-label="Use the default icon" onClick={() => setIconUrl("")} className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500">Shown in the store&apos;s category strip and search. A small square PNG or WebP works best; without one the built-in icon is used.</p>
+        </div>
         <label className="flex items-center gap-2 text-sm text-zinc-700">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 rounded border-zinc-300" />
           Active (visible in the storefront)
