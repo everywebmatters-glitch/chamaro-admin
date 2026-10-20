@@ -81,8 +81,8 @@ export interface ProductImageInput {
 export interface ProductVariantInput {
   name: string;
   sku: string; // unique across all variants
-  // Name: Value pairs; colour variants also carry `images` (their photos' media ids), see lib/variant-form.ts
-  options: Record<string, string | string[]>;
+  // Name: Value pairs, plus data the storefront reads (photo ids, compare-at price, stock), see lib/variant-form.ts
+  options: Record<string, string | string[] | number>;
   price?: number; // >= 0
   status?: ProductStatusCode; // API default: ACTIVE
 }

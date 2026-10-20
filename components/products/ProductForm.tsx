@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, Plus, SearchX, Star, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, Plus, SearchX, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FormSection } from "@/components/ui/FormSection";
 import { Input } from "@/components/ui/Input";
@@ -12,12 +12,10 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingState } from "@/components/ui/LoadingState";
-import { ImagePreview } from "@/components/ui/ImagePreview";
-import { ImageUploader } from "@/components/ui/ImageUploader";
 import { useAdminSession } from "@/components/auth/AuthProvider";
 import { ApiError } from "@/lib/api/client";
 import { listAdminCategories, type ApiCategory } from "@/lib/api/categories";
-import { IMAGE_ACCEPT, imageFileProblem, uploadMedia } from "@/lib/api/media";
+import { imageFileProblem, uploadMedia } from "@/lib/api/media";
 import {
   createAdminProduct,
   getAdminProduct,
@@ -31,7 +29,8 @@ import {
 } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
-import { fromVariantOptions, splitImages, toVariantOptions, variantName } from "@/lib/variant-form";
+import { fromVariantOptions, productTotals, splitImages, toVariantOptions, variantName } from "@/lib/variant-form";
+import { detailsToSave, withPresetDetails } from "@/lib/product-details";
 import { ColourVariantCard } from "./ColourVariantCard";
 
 interface ProductFormProps {
@@ -39,7 +38,7 @@ interface ProductFormProps {
   productId?: string;
 }
 
-type Field = "name" | "slug" | "description" | "features" | "materials" | "specifications" | "returnPolicy" | "warranty" | "price" | "compareAtPrice" | "sku" | "quantity" | "categoryId" | "images" | "variants";
+type Field = "name" | "slug" | "description" | "features" | "specifications" | "returnPolicy" | "warranty" | "categoryId" | "variants";
 type FieldErrors = Partial<Record<Field, string>>;
 
 export interface ImageRow {
@@ -61,13 +60,16 @@ interface SpecRow {
   value: string;
 }
 
-// One colour of the product: its own SKU, price and photos (see lib/variant-form.ts).
+// One attribute (colour) of the product with its own SKU, prices, stock and photos (see lib/variant-form.ts).
+// The product's own price, compare-at price and stock are derived from these when saving.
 export interface VariantRow {
   key: string;
   colour: string;
   hex: string; // "#rrggbb", or "" for the default shade of the colour name
   sku: string;
   price: string;
+  compareAtPrice: string;
+  stock: string;
   other: string; // extra options, "Size: L"
   status: ProductStatusCode;
   photos: ImageRow[];
@@ -76,7 +78,6 @@ export interface VariantRow {
 // Limits mirror the product body schema in backend/src/routes/product.routes.ts and the Prisma columns behind it.
 const MAX_TEXT = 191;
 const MAX_DESCRIPTION = 50000;
-const MAX_ALT_TEXT = 500;
 const MAX_IMAGES = 20;
 // Storefront tab limits (mirror the product body schema)
 const MAX_LIST_ITEMS = 30;
@@ -108,24 +109,59 @@ function toSlug(value: string): string {
 let rowCounter = 0;
 const newKey = () => `row-${++rowCounter}`;
 
-function priceText(value: string | null | undefined): string {
-  return value == null ? "" : Number(value).toFixed(2);
+function priceText(value: string | number | null | undefined): string {
+  return value == null || value === "" ? "" : Number(value).toFixed(2);
 }
 
 function toImageRow(image: ApiProduct["images"][number]): ImageRow {
-  return { key: image.id, mediaId: image.mediaId, url: image.url, altText: image.altText ?? "", isPrimary: image.isPrimary };
+  return { key: image.id, mediaId: image.mediaId, url: image.url, altText: image.altText ?? "", isPrimary: false };
 }
 
-// Exactly one primary image whenever there are images.
-function withPrimary(rows: ImageRow[]): ImageRow[] {
-  if (!rows.length || rows.some((row) => row.isPrimary)) return rows;
-  return rows.map((row, index) => ({ ...row, isPrimary: index === 0 }));
+function blankAttribute(): VariantRow {
+  return { key: newKey(), colour: "", hex: "", sku: "", price: "", compareAtPrice: "", stock: "", other: "", status: "ACTIVE", photos: [] };
 }
 
 function uploadErrorMessage(file: File, error: ApiError): string {
   if (error.status === 413) return `“${file.name}” is larger than 5 MB.`;
   if (error.status === 415) return `“${file.name}” isn't a JPEG, PNG or WebP image.`;
   return `Couldn't upload “${file.name}”: ${error.message}`;
+}
+
+// The form's attributes for a saved product. Products saved before attributes held the media, price and
+// stock become one attribute carrying them; photos not owned by any attribute go to the first one.
+function initialAttributes(product?: ApiProduct): VariantRow[] {
+  if (!product) return [blankAttribute()];
+  const images = [...product.images].sort((a, b) => a.position - b.position);
+  const { main, byVariant } = splitImages(images, product.variants);
+
+  const rows: VariantRow[] = product.variants.map((variant, index) => {
+    const fields = fromVariantOptions(variant.options, variant.name);
+    return {
+      key: variant.id,
+      colour: fields.colour,
+      hex: fields.hex,
+      sku: variant.sku,
+      price: priceText(variant.price ?? product.price),
+      compareAtPrice: priceText(fields.compareAtPrice ?? (variant.price == null ? product.compareAtPrice : null)),
+      // Before per-attribute stock, the product's stock covered every variant; the first one keeps it.
+      stock: String(fields.stock ?? (index === 0 ? product.inventory?.quantity ?? 0 : 0)),
+      other: fields.other,
+      status: variant.status,
+      photos: byVariant[index].map(toImageRow),
+    };
+  });
+
+  if (!rows.length) {
+    rows.push({
+      ...blankAttribute(),
+      sku: product.sku ?? "",
+      price: priceText(product.price),
+      compareAtPrice: priceText(product.compareAtPrice),
+      stock: String(product.inventory?.quantity ?? 0),
+    });
+  }
+  rows[0] = { ...rows[0], photos: [...main.map(toImageRow), ...rows[0].photos] };
+  return rows;
 }
 
 // /products/{id}/edit/ → id (the shell page is served under the requested URL)
@@ -199,40 +235,17 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
   const [slugEdited, setSlugEdited] = useState(Boolean(product));
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
   const [status, setStatus] = useState<ProductStatusCode>(product?.status ?? "ACTIVE");
-  // A colour's own photos are product images too; they are listed under that colour, not in Media.
-  const [initial] = useState(() =>
-    splitImages(
-      [...(product?.images ?? [])].sort((a, b) => a.position - b.position),
-      product?.variants ?? []
-    )
-  );
-  const [images, setImages] = useState<ImageRow[]>(initial.main.map(toImageRow));
-  const [imagesDirty, setImagesDirty] = useState(false);
-  const [variants, setVariants] = useState<VariantRow[]>(
-    (product?.variants ?? []).map((v, index) => {
-      const fields = fromVariantOptions(v.options, v.name);
-      return {
-        key: v.id,
-        colour: fields.colour,
-        hex: fields.hex,
-        sku: v.sku,
-        price: priceText(v.price),
-        other: fields.other,
-        status: v.status,
-        photos: initial.byVariant[index].map((image) => ({ ...toImageRow(image), isPrimary: false })),
-      };
-    })
-  );
-  const [variantsDirty, setVariantsDirty] = useState(false);
-  const uploading = images.some((row) => row.uploading) || variants.some((row) => row.photos.some((photo) => photo.uploading));
-  // The API allows 20 images per product, counting every colour's photos.
-  const imageCount = images.length + variants.reduce((sum, row) => sum + row.photos.length, 0);
-  const [specs, setSpecs] = useState<SpecRow[]>((product?.specifications ?? []).map((spec) => ({ key: newKey(), ...spec })));
+  const [variants, setVariants] = useState<VariantRow[]>(() => initialAttributes(product));
+  // Saved details first, then the preset labels the product doesn't have yet (left empty).
+  const [specs, setSpecs] = useState<SpecRow[]>(() => withPresetDetails(product?.specifications ?? []).map((row) => ({ key: newKey(), ...row })));
   const [categories, setCategories] = useState<ApiCategory[] | null>(null);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "saving" | "saved">("idle");
+  const uploading = variants.some((row) => row.photos.some((photo) => photo.uploading));
+  // The API allows 20 images per product, counting every attribute's photos.
+  const imageCount = variants.reduce((sum, row) => sum + row.photos.length, 0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -250,75 +263,17 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   }
 
-  function updateImages(next: ImageRow[]) {
-    setImages(next);
-    setImagesDirty(true);
-    clearFieldError("images");
-  }
-
-  // Each file is checked, shown as a local preview, uploaded, then switched to the stored copy's URL,
-  // so the preview proves the API has the file. Failed uploads are removed and reported.
-  async function uploadFiles(files: File[]) {
-    const problems: string[] = [];
-    const accepted = files.filter((file) => {
-      const problem = imageFileProblem(file);
-      if (problem) problems.push(problem);
-      return !problem;
-    });
-    const room = MAX_IMAGES - imageCount;
-    if (accepted.length > room) {
-      problems.push(`A product can have up to ${MAX_IMAGES} images.`);
-      accepted.splice(Math.max(room, 0));
-    }
-    setFieldErrors((prev) => ({ ...prev, images: problems.join(" ") || undefined }));
-    if (!accepted.length) return;
-
-    const pending: ImageRow[] = accepted.map((file) => ({
-      key: newKey(),
-      mediaId: null,
-      url: URL.createObjectURL(file),
-      altText: "",
-      isPrimary: false,
-      uploading: true,
-      filename: file.name,
-    }));
-    setImages((rows) => withPrimary([...rows, ...pending]));
-    setImagesDirty(true);
-
-    const token = getSessionToken() ?? "";
-    await Promise.all(
-      pending.map(async (row, index) => {
-        const file = accepted[index];
-        try {
-          const media = await uploadMedia(token, file);
-          setImages((rows) => rows.map((r) => (r.key === row.key ? { ...r, mediaId: media.id, url: media.url, uploading: false } : r)));
-        } catch (error) {
-          const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Upload failed.");
-          if (apiError.status === 401) return logout();
-          setImages((rows) => withPrimary(rows.filter((r) => r.key !== row.key)));
-          setFieldErrors((prev) => ({ ...prev, images: [prev.images, uploadErrorMessage(file, apiError)].filter(Boolean).join(" ") }));
-        } finally {
-          if (row.url) URL.revokeObjectURL(row.url);
-        }
-      })
-    );
-  }
-
   function updateVariant(key: string, patch: Partial<VariantRow>) {
     setVariants((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-    setVariantsDirty(true);
     clearFieldError("variants");
-    // A colour's photos are saved with the product's images.
-    if (patch.photos) setImagesDirty(true);
   }
 
   function updatePhotos(key: string, change: (photos: ImageRow[]) => ImageRow[]) {
     setVariants((rows) => rows.map((row) => (row.key === key ? { ...row, photos: change(row.photos) } : row)));
-    setVariantsDirty(true);
-    setImagesDirty(true);
   }
 
-  // Same flow as uploadFiles, for one colour's photos.
+  // Each file is checked, shown as a local preview, uploaded, then switched to the stored copy's URL,
+  // so the preview proves the API has the file. Failed uploads are removed and reported.
   async function uploadVariantPhotos(key: string, files: File[]) {
     const problems: string[] = [];
     const accepted = files.filter((file) => {
@@ -328,7 +283,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     });
     const room = MAX_IMAGES - imageCount;
     if (accepted.length > room) {
-      problems.push(`A product can have up to ${MAX_IMAGES} images, including every colour's photos.`);
+      problems.push(`A product can have up to ${MAX_IMAGES} photos across all its attributes.`);
       accepted.splice(Math.max(room, 0));
     }
     setFieldErrors((prev) => ({ ...prev, variants: problems.join(" ") || undefined }));
@@ -381,114 +336,106 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
 
     const features = linesOf(String(form.get("features") ?? ""));
     errors.features = listProblem(features, "features");
-    const materials = linesOf(String(form.get("materials") ?? ""));
-    errors.materials = listProblem(materials, "materials");
 
-    // Rows left completely empty are ignored; half-filled rows are an error.
-    const specifications = specs.map((row) => ({ label: row.label.trim(), value: row.value.trim() })).filter((row) => row.label || row.value);
-    if (specifications.some((row) => !row.label || !row.value)) errors.specifications = "Each row needs both a label and a value.";
-    else if (specifications.length > MAX_SPECS) errors.specifications = `Add up to ${MAX_SPECS} rows.`;
+    // Preset rows left without a value aren't saved.
+    const details = detailsToSave(specs);
+    const specifications = details.rows;
+    if (details.error) errors.specifications = details.error;
+    else if (specifications.length > MAX_SPECS) errors.specifications = `Add up to ${MAX_SPECS} rows with values.`;
     else if (specifications.some((row) => row.label.length > MAX_SPEC_LABEL || row.value.length > MAX_SPEC_VALUE)) errors.specifications = `Labels can be up to ${MAX_SPEC_LABEL} characters and values up to ${MAX_SPEC_VALUE}.`;
 
-    const returnPolicy = text("returnPolicy");
-    if (returnPolicy.length > MAX_POLICY) errors.returnPolicy = `Use ${MAX_POLICY.toLocaleString()} characters or fewer.`;
     const warranty = text("warranty");
     if (warranty.length > MAX_POLICY) errors.warranty = `Use ${MAX_POLICY.toLocaleString()} characters or fewer.`;
-
-    const priceValue = text("price");
-    const price = Number(priceValue);
-    if (!priceValue) errors.price = "Enter a price.";
-    else if (!PRICE_PATTERN.test(priceValue) || price > MAX_PRICE) errors.price = "Enter a price of 0 or more with at most 2 decimals.";
-
-    const compareValue = text("compareAtPrice");
-    const compareAtPrice = Number(compareValue);
-    if (compareValue) {
-      if (!PRICE_PATTERN.test(compareValue) || compareAtPrice > MAX_PRICE) errors.compareAtPrice = "Enter a price of 0 or more with at most 2 decimals.";
-      else if (!errors.price && compareAtPrice < price) errors.compareAtPrice = "Must be greater than or equal to the price.";
-    } else if (product?.compareAtPrice != null) {
-      errors.compareAtPrice = "The API can't remove a compare-at price once set. Enter a value.";
-    }
-
-    const sku = text("sku");
-    if (sku.length > MAX_TEXT) errors.sku = `Use ${MAX_TEXT} characters or fewer.`;
-    else if (!sku && product?.sku) errors.sku = "The API can't remove a SKU once set. Enter a value.";
-
-    const quantityValue = text("stock");
-    if (quantityValue && (!/^\d+$/.test(quantityValue) || Number(quantityValue) > MAX_QUANTITY)) errors.quantity = "Enter a whole number of 0 or more.";
-    else if (!quantityValue && product?.inventory) errors.quantity = "The API can't stop tracking stock once set. Enter a quantity.";
+    // The Disclaimer tab's text is stored in the product's returnPolicy column (the per-product return policy is no longer edited).
+    const disclaimer = text("disclaimer");
+    if (disclaimer.length > MAX_POLICY) errors.returnPolicy = `Use ${MAX_POLICY.toLocaleString()} characters or fewer.`;
 
     if (!categoryId) errors.categoryId = "Select a category.";
 
-    // Only uploaded images can be saved. A legacy external image is kept as long as the images
-    // aren't changed; once they are, the admin must remove it (the API no longer accepts URLs).
-    const imagesWillBeSent = mode === "create" || imagesDirty;
-    // Main images first, then each colour's own photos (never primary: those only show for that colour).
-    const imageInputs: ProductImageInput[] = [
-      ...images.filter((image) => image.mediaId),
-      ...variants.flatMap((row) => row.photos.filter((photo) => photo.mediaId).map((photo) => ({ ...photo, isPrimary: false }))),
-    ].map((image, position) => ({
-      mediaId: image.mediaId!,
-      position,
-      isPrimary: image.isPrimary,
-      ...(image.altText.trim() ? { altText: image.altText.trim() } : {}),
-    }));
-    if (uploading) errors.images = "Wait for the images to finish uploading.";
-    else if (imagesWillBeSent && images.some((image) => !image.mediaId)) errors.images = "Remove the external image before saving image changes. Upload a replacement instead.";
-    else if (images.some((image) => image.altText.trim().length > MAX_ALT_TEXT)) errors.images = `Alt text must be ${MAX_ALT_TEXT} characters or fewer.`;
-
+    // Attributes: each one's SKU, prices, stock and photos.
     const variantInputs: ProductVariantInput[] = [];
+    const totalsInput: { status: string; price: number; compareAtPrice?: number; stock: number }[] = [];
     const seenSkus = new Set<string>();
-    const seenColours = new Set<string>();
-    for (const row of variants) {
+    const seenNames = new Set<string>();
+    if (!variants.length) errors.variants = "Add at least one attribute: it holds the product's price, stock and photos.";
+    else if (uploading) errors.variants = "Wait for the photos to finish uploading.";
+    else if (variants.some((row) => row.photos.some((photo) => !photo.mediaId))) errors.variants = "Remove the external image (not stored by Chamaro) and upload a replacement.";
+    else if (imageCount > MAX_IMAGES) errors.variants = `A product can have up to ${MAX_IMAGES} photos across all its attributes.`;
+    for (const row of errors.variants ? [] : variants) {
       const colour = row.colour.trim();
       const variantSku = row.sku.trim();
-      const imageIds = row.photos.flatMap((photo) => (photo.mediaId ? [photo.mediaId] : []));
-      const options = toVariantOptions({ colour, hex: row.hex, other: row.other, imageIds });
-      const name = variantName({ colour, other: row.other });
-      const variantPrice = row.price.trim();
+      const label = variantName({ colour, other: row.other }) || "This attribute";
+      const priceValue = row.price.trim();
+      const compareValue = row.compareAtPrice.trim();
+      const stockValue = row.stock.trim();
       let problem: string | undefined;
-      if (!colour || colour.length > MAX_TEXT) problem = "Each colour needs a name (up to 191 characters).";
-      else if (!options) problem = `Write the extra options for "${colour}" as Name: Value, e.g. Size: L.`;
-      else if (seenColours.has(name.toLowerCase())) problem = `"${name}" is listed twice.`;
-      else if (name.length > MAX_TEXT) problem = `"${name}" is too long; shorten the colour or extra options.`;
-      else if (!variantSku || variantSku.length > MAX_TEXT) problem = `"${name}" needs a SKU (up to 191 characters).`;
+      if (!colour || colour.length > MAX_TEXT) problem = "Each attribute needs a colour name (up to 191 characters).";
+      else if (seenNames.has(label.toLowerCase())) problem = `"${label}" is listed twice.`;
+      else if (label.length > MAX_TEXT) problem = `"${label}" is too long; shorten the colour or extra options.`;
+      else if (!variantSku || variantSku.length > MAX_TEXT) problem = `"${label}" needs a SKU (up to 191 characters).`;
       else if (seenSkus.has(variantSku.toLowerCase())) problem = `SKU "${variantSku}" is used twice.`;
-      else if (variantPrice && (!PRICE_PATTERN.test(variantPrice) || Number(variantPrice) > MAX_PRICE)) problem = `Enter a valid price for "${name}", or leave it empty to use the product price.`;
+      else if (!priceValue || !PRICE_PATTERN.test(priceValue) || Number(priceValue) > MAX_PRICE) problem = `Enter a price for "${label}" (0 or more, at most 2 decimals).`;
+      else if (compareValue && (!PRICE_PATTERN.test(compareValue) || Number(compareValue) > MAX_PRICE)) problem = `Enter a valid compare-at price for "${label}", or leave it empty.`;
+      else if (compareValue && Number(compareValue) < Number(priceValue)) problem = `The compare-at price of "${label}" must be at least its price.`;
+      else if (!/^\d+$/.test(stockValue) || Number(stockValue) > MAX_QUANTITY) problem = `Enter the stock of "${label}" as a whole number (0 or more).`;
+      const options = problem
+        ? null
+        : toVariantOptions({
+            colour,
+            hex: row.hex,
+            other: row.other,
+            imageIds: row.photos.map((photo) => photo.mediaId!),
+            ...(compareValue ? { compareAtPrice: Number(compareValue) } : {}),
+            stock: Number(stockValue),
+          });
+      if (!problem && !options) problem = `Write the extra options for "${label}" as Name: Value, e.g. Size: L.`;
       if (problem) {
         errors.variants = problem;
         break;
       }
       seenSkus.add(variantSku.toLowerCase());
-      seenColours.add(name.toLowerCase());
-      variantInputs.push({
-        name,
-        sku: variantSku,
-        options: options!,
+      seenNames.add(label.toLowerCase());
+      variantInputs.push({ name: label, sku: variantSku, options: options!, status: row.status, price: Number(priceValue) });
+      totalsInput.push({
         status: row.status,
-        ...(variantPrice ? { price: Number(variantPrice) } : {}),
+        price: Number(priceValue),
+        ...(compareValue ? { compareAtPrice: Number(compareValue) } : {}),
+        stock: Number(stockValue),
       });
     }
 
+    // Every attribute's photos are the product's images; the first one is the listing image.
+    const imageInputs: ProductImageInput[] = variants
+      .flatMap((row) => row.photos)
+      .filter((photo) => photo.mediaId)
+      .map((photo, position) => ({
+        mediaId: photo.mediaId!,
+        position,
+        isPrimary: position === 0,
+        ...(photo.altText.trim() ? { altText: photo.altText.trim() } : {}),
+      }));
+
+    // The product row's own price, compare-at price and stock come from the attributes.
+    const totals = productTotals(totalsInput);
     const input: CreateProductInput = {
       name: trimmedName,
       slug: normalizedSlug,
-      price,
+      price: totals.price,
       categoryId,
       status,
       // On edit an empty description clears it; the other optional fields can only be set.
       ...(description || product?.description ? { description } : {}),
       // Always sent, so clearing them in the form clears them in the storefront.
       features,
-      materials,
       specifications,
-      returnPolicy,
+      returnPolicy: disclaimer,
       warranty,
-      ...(compareValue ? { compareAtPrice } : {}),
-      ...(sku ? { sku } : {}),
-      ...(quantityValue ? { quantity: Number(quantityValue) } : {}),
-      // PUT replaces images/variants wholesale, so only send them when they were changed.
-      ...(mode === "create" ? (imageInputs.length ? { images: imageInputs } : {}) : imagesDirty ? { images: imageInputs } : {}),
-      ...(mode === "create" ? (variantInputs.length ? { variants: variantInputs } : {}) : variantsDirty ? { variants: variantInputs } : {}),
+      // The API can't remove a compare-at price once set; one equal to the price is never shown.
+      ...(totals.compareAtPrice !== undefined ? { compareAtPrice: totals.compareAtPrice } : product?.compareAtPrice != null ? { compareAtPrice: totals.price } : {}),
+      quantity: totals.quantity,
+      // PUT replaces images and variants wholesale; both are always sent so they stay in step.
+      images: imageInputs,
+      variants: variantInputs,
     };
     return { errors, input };
   }
@@ -522,7 +469,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
           // The API reports only a generic "Request validation failed" (no per-field detail),
           // except for the compare-at price rule, which has its own message.
           if (apiError.message.includes("compareAtPrice")) {
-            setFieldErrors({ compareAtPrice: "Must be greater than or equal to the price." });
+            setFieldErrors({ variants: "The first attribute's compare-at price must be at least its price." });
             setFormError("Fix the highlighted fields and try again.");
           } else {
             setFormError(`The server rejected these product details: ${apiError.message}.`);
@@ -540,8 +487,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
           // A unique constraint failed; the API doesn't say which one.
           setFieldErrors({
             slug: "This URL handle may already be used by another product.",
-            ...(input.sku ? { sku: "This SKU may already be used by another product." } : {}),
-            ...(input.variants?.length ? { variants: "A variant SKU may already be used by another product." } : {}),
+            variants: "An attribute SKU may already be used by another product.",
           });
           setFormError("Another record already uses this URL handle or one of these SKUs.");
           return;
@@ -603,7 +549,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
           <Input
             label="Product name"
             name="name"
-            placeholder="e.g. Classic Cotton T-Shirt"
+            placeholder="e.g. Elegant Boss Chair"
             value={name}
             maxLength={MAX_TEXT}
             error={fieldErrors.name}
@@ -620,7 +566,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
           <Input
             label="URL handle"
             name="slug"
-            placeholder="e.g. classic-cotton-t-shirt"
+            placeholder="e.g. elegant-boss-chair"
             value={slug}
             maxLength={MAX_TEXT}
             hint={
@@ -637,6 +583,12 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
             onBlur={() => setSlug((value) => toSlug(value))}
             required
           />
+        </FormSection>
+
+        <FormSection
+          title="Product page tabs"
+          description="The Description, Features, Additional Information, Warranty and Disclaimer tabs on the product page."
+        >
           <Textarea
             label="Description"
             name="description"
@@ -645,67 +597,48 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
             maxLength={MAX_DESCRIPTION}
             error={fieldErrors.description}
           />
-        </FormSection>
-
-        <FormSection
-          title="Product page tabs"
-          description="Content for the storefront's Description, Additional Information, Return Policies and Warranty tabs."
-        >
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Textarea
-              label="Features"
-              name="features"
-              placeholder={"Breathable mesh back\nAdjustable lumbar support"}
-              defaultValue={(product?.features ?? []).join("\n")}
-              hint="One per line. Shown in the Description tab."
-              error={fieldErrors.features}
-              onChange={() => clearFieldError("features")}
-            />
-            <Textarea
-              label="Materials"
-              name="materials"
-              placeholder={"Nylon base\nHigh-density foam"}
-              defaultValue={(product?.materials ?? []).join("\n")}
-              hint="One per line. Shown in the Description tab."
-              error={fieldErrors.materials}
-              onChange={() => clearFieldError("materials")}
-            />
-          </div>
+          <Textarea
+            label="Features"
+            name="features"
+            placeholder={"Breathable mesh back\nAdjustable lumbar support"}
+            defaultValue={(product?.features ?? []).join("\n")}
+            hint="One per line."
+            error={fieldErrors.features}
+            onChange={() => clearFieldError("features")}
+          />
 
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-zinc-700">Additional information</span>
-            {specs.length > 0 && (
-              <ul className="flex flex-col gap-2">
-                {specs.map((row, index) => {
-                  const cell = "h-9 w-full rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-900/10";
-                  const update = (patch: Partial<SpecRow>) => {
-                    setSpecs((rows) => rows.map((r) => (r.key === row.key ? { ...r, ...patch } : r)));
-                    clearFieldError("specifications");
-                  };
-                  return (
-                    <li key={row.key} className="flex items-center gap-2">
-                      <input aria-label={`Detail ${index + 1} label`} placeholder="e.g. Seat height" value={row.label} maxLength={MAX_SPEC_LABEL} onChange={(e) => update({ label: e.target.value })} className={cn(cell, "sm:w-2/5")} />
-                      <input aria-label={`Detail ${index + 1} value`} placeholder="e.g. 45–55 cm" value={row.value} maxLength={MAX_SPEC_VALUE} onChange={(e) => update({ value: e.target.value })} className={cell} />
-                      <button
-                        type="button"
-                        aria-label={`Remove detail ${index + 1}`}
-                        onClick={() => {
-                          setSpecs((rows) => rows.filter((r) => r.key !== row.key));
-                          clearFieldError("specifications");
-                        }}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            <ul className="flex flex-col gap-2">
+              {specs.map((row, index) => {
+                const cell = "h-9 min-w-0 rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-900/10";
+                const update = (patch: Partial<SpecRow>) => {
+                  setSpecs((rows) => rows.map((r) => (r.key === row.key ? { ...r, ...patch } : r)));
+                  clearFieldError("specifications");
+                };
+                return (
+                  <li key={row.key} className="flex items-center gap-2">
+                    <input aria-label={`Detail ${index + 1} label`} placeholder="Label, e.g. Seat height" value={row.label} maxLength={MAX_SPEC_LABEL} onChange={(e) => update({ label: e.target.value })} className={cn(cell, "w-2/5 shrink-0 bg-zinc-50 font-medium")} />
+                    <input aria-label={`${row.label || `Detail ${index + 1}`} value`} placeholder="Value" value={row.value} maxLength={MAX_SPEC_VALUE} onChange={(e) => update({ value: e.target.value })} className={cn(cell, "flex-1")} />
+                    <button
+                      type="button"
+                      aria-label={`Remove ${row.label || `detail ${index + 1}`}`}
+                      onClick={() => {
+                        setSpecs((rows) => rows.filter((r) => r.key !== row.key));
+                        clearFieldError("specifications");
+                      }}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
             {fieldErrors.specifications ? (
               <p className="text-xs text-red-600">{fieldErrors.specifications}</p>
             ) : (
-              <p className="text-xs text-zinc-500">Label and value pairs such as dimensions, weight capacity or assembly. The SKU is added automatically.</p>
+              <p className="text-xs text-zinc-500">Fill in the values that apply; rows left empty aren&apos;t shown. Add your own rows for anything else. The SKU is added automatically.</p>
             )}
             <div>
               <Button
@@ -721,15 +654,6 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
           </div>
 
           <Textarea
-            label="Return policy"
-            name="returnPolicy"
-            defaultValue={product?.returnPolicy ?? ""}
-            maxLength={MAX_POLICY}
-            hint="Leave empty to show the store's standard return policy."
-            error={fieldErrors.returnPolicy}
-            onChange={() => clearFieldError("returnPolicy")}
-          />
-          <Textarea
             label="Warranty"
             name="warranty"
             defaultValue={product?.warranty ?? ""}
@@ -738,146 +662,22 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
             error={fieldErrors.warranty}
             onChange={() => clearFieldError("warranty")}
           />
+          <Textarea
+            label="Disclaimer"
+            name="disclaimer"
+            defaultValue={product?.returnPolicy ?? ""}
+            maxLength={MAX_POLICY}
+            hint="Leave empty to show the store's standard disclaimer."
+            error={fieldErrors.returnPolicy}
+            onChange={() => clearFieldError("returnPolicy")}
+          />
         </FormSection>
 
         <FormSection
-          title="Media"
-          description="Images are uploaded to Chamaro and stored in its database. The primary image is shown in product listings."
-        >
-          {images.length > 0 && (
-            <ul className="flex flex-col gap-2">
-              {images.map((image, index) => (
-                <li key={image.key} className="flex items-center gap-3 rounded-md border border-zinc-200 p-2">
-                  <ImagePreview src={image.url} label={image.altText || name} size="md" />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                    {image.uploading ? (
-                      <p className="flex items-center gap-1.5 truncate text-xs text-zinc-500">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading {image.filename}...
-                      </p>
-                    ) : image.mediaId ? (
-                      <p className="truncate text-xs text-zinc-500">{image.filename ?? "Stored image"}</p>
-                    ) : (
-                      <p className="truncate text-xs text-amber-600" title={image.url ?? undefined}>
-                        External image (not stored by Chamaro). It can&apos;t be kept if you change images; upload a replacement.
-                      </p>
-                    )}
-                    <input
-                      aria-label={`Alt text for image ${index + 1}`}
-                      placeholder="Alt text (describes the image)"
-                      value={image.altText}
-                      maxLength={MAX_ALT_TEXT}
-                      onChange={(e) => updateImages(images.map((row) => (row.key === image.key ? { ...row, altText: e.target.value } : row)))}
-                      className="h-8 w-full rounded-md border border-zinc-300 px-2 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-900/10"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={image.uploading}
-                    onClick={() => updateImages(images.map((row) => ({ ...row, isPrimary: row.key === image.key })))}
-                    aria-pressed={image.isPrimary}
-                    title={image.isPrimary ? "Primary image" : "Make primary"}
-                    className={cn(
-                      "flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium",
-                      image.isPrimary ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100"
-                    )}
-                  >
-                    <Star className="h-3.5 w-3.5" />
-                    {image.isPrimary ? "Primary" : "Make primary"}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove image ${index + 1}`}
-                    disabled={image.uploading}
-                    onClick={() => updateImages(withPrimary(images.filter((row) => row.key !== image.key)))}
-                    className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {fieldErrors.images && (
-            <p role="alert" className="text-xs text-red-600">
-              {fieldErrors.images}
-            </p>
-          )}
-          {imageCount < MAX_IMAGES && (
-            <ImageUploader
-              label={images.length ? "Add more images" : "Product images"}
-              aspect="wide"
-              multiple
-              accept={IMAGE_ACCEPT}
-              formats="JPEG, PNG or WebP, up to 5 MB each"
-              busy={uploading}
-              onFiles={uploadFiles}
-            />
-          )}
-        </FormSection>
-
-        <FormSection title="Pricing" description="Set the price customers will pay.">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Price"
-              name="price"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              defaultValue={priceText(product?.price)}
-              error={fieldErrors.price}
-              onChange={() => clearFieldError("price")}
-              required
-            />
-            <Input
-              label="Compare-at price"
-              name="compareAtPrice"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              hint="Optional. Shown as a strikethrough price."
-              defaultValue={priceText(product?.compareAtPrice)}
-              error={fieldErrors.compareAtPrice}
-              onChange={() => clearFieldError("compareAtPrice")}
-            />
-          </div>
-        </FormSection>
-
-        <FormSection title="Inventory" description="Track stock for this product.">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="SKU"
-              name="sku"
-              placeholder="e.g. TS-CL-001"
-              defaultValue={product?.sku ?? ""}
-              maxLength={MAX_TEXT}
-              hint="Optional. Must be unique."
-              error={fieldErrors.sku}
-              onChange={() => clearFieldError("sku")}
-            />
-            <Input
-              label="Stock quantity"
-              name="stock"
-              type="number"
-              min="0"
-              step="1"
-              placeholder="0"
-              defaultValue={product?.inventory?.quantity ?? ""}
-              hint={
-                product?.inventory
-                  ? `${product.inventory.reservedQuantity} reserved in open carts/orders.`
-                  : "Optional. Leave empty to skip inventory tracking."
-              }
-              error={fieldErrors.quantity}
-              onChange={() => clearFieldError("quantity")}
-            />
-          </div>
-        </FormSection>
-
-        <FormSection
-          title="Colours"
-          description="Optional. Each colour is sold with its own SKU, price and photos; customers pick it from the colour swatches. Leave a colour's price empty to use the product price, and its photos empty to show the main product images."
+          title="Attributes"
+          description={`Each attribute is one colour of the product, sold with its own SKU, price, stock and photos; customers pick it from the colour swatches. The first active attribute's price and photo are shown in product listings, and the product's stock is the total of its active attributes.${
+            product?.inventory?.reservedQuantity ? ` ${product.inventory.reservedQuantity} unit(s) are reserved in open carts/orders.` : ""
+          }`}
         >
           {variants.length > 0 && (
             <ul className="flex flex-col gap-3">
@@ -888,14 +688,12 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
                   row={row}
                   productName={name}
                   canAddPhotos={imageCount < MAX_IMAGES}
+                  canRemove={variants.length > 1}
                   onChange={(patch) => updateVariant(row.key, patch)}
                   onPhotos={(change) => updatePhotos(row.key, change)}
                   onUpload={(files) => uploadVariantPhotos(row.key, files)}
                   onRemove={() => {
                     setVariants((rows) => rows.filter((r) => r.key !== row.key));
-                    setVariantsDirty(true);
-                    // Its photos leave the product's images too.
-                    if (row.photos.length) setImagesDirty(true);
                     clearFieldError("variants");
                   }}
                 />
@@ -912,15 +710,9 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
               type="button"
               variant="secondary"
               icon={<Plus className="h-4 w-4" />}
-              onClick={() => {
-                setVariants((rows) => [
-                  ...rows,
-                  { key: newKey(), colour: "", hex: "", sku: "", price: "", other: "", status: "ACTIVE", photos: [] },
-                ]);
-                setVariantsDirty(true);
-              }}
+              onClick={() => setVariants((rows) => [...rows, blankAttribute()])}
             >
-              Add colour
+              Add attribute
             </Button>
           </div>
         </FormSection>

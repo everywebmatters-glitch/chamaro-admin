@@ -7,12 +7,19 @@
 //   images     media ids of the variant's own photos. They are also sent as product images,
 //              which keeps the API from deleting their files; the storefront shows them only
 //              for this variant.
+//   compareAtPrice  the variant's struck-through price (number)
+//   stock      units of this variant (integer). The API only enforces the product's stock, which
+//              the form saves as the total of its active variants.
 //   any other  extra options such as Size, shown as pills
 import type { ApiProductImage } from "@/lib/api/products";
 
 export const COLOUR_KEY = "Color";
 export const HEX_KEY = "ColorHex";
 export const IMAGES_KEY = "images";
+export const COMPARE_KEY = "compareAtPrice";
+export const STOCK_KEY = "stock";
+// Keys that hold data rather than a customer-facing option
+const DATA_KEYS = new Set([IMAGES_KEY, COMPARE_KEY, STOCK_KEY]);
 
 const COLOUR_KEYS = /^colou?r$/i;
 const HEX_KEYS = /^colou?r ?hex$/i;
@@ -40,6 +47,13 @@ export interface VariantFields {
   // Extra options as "Size: L, Finish: Matte"
   other: string;
   imageIds: string[];
+  compareAtPrice?: number;
+  stock?: number;
+}
+
+function numberOf(value: unknown): number | undefined {
+  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
 function text(value: unknown): string {
@@ -58,14 +72,18 @@ export function fromVariantOptions(options: Record<string, unknown>, name: strin
   const hexEntry = entries.find(([key]) => HEX_KEYS.test(key));
   const hex = text(hexEntry?.[1]);
   const other = entries
-    .filter(([key, value]) => key !== IMAGES_KEY && !COLOUR_KEYS.test(key) && !HEX_KEYS.test(key) && text(value))
+    .filter(([key, value]) => !DATA_KEYS.has(key) && !COLOUR_KEYS.test(key) && !HEX_KEYS.test(key) && text(value))
     .map(([key, value]) => `${key}: ${text(value)}`)
     .join(", ");
+  const stock = numberOf(options?.[STOCK_KEY]);
+  const compareAtPrice = numberOf(options?.[COMPARE_KEY]);
   return {
     colour: colourEntry ? text(colourEntry[1]) : name,
     hex: HEX.test(hex) ? hex.toLowerCase() : "",
     other,
     imageIds: imageIdsOf(options),
+    ...(compareAtPrice !== undefined ? { compareAtPrice } : {}),
+    ...(stock !== undefined ? { stock: Math.floor(stock) } : {}),
   };
 }
 
@@ -76,14 +94,14 @@ export function parseOtherOptions(textValue: string): Record<string, string> | n
     const [key, ...rest] = part.split(":");
     const value = rest.join(":").trim();
     if (!key.trim() || !value) return null;
-    if (COLOUR_KEYS.test(key.trim()) || HEX_KEYS.test(key.trim()) || key.trim() === IMAGES_KEY) return null;
+    if (COLOUR_KEYS.test(key.trim()) || HEX_KEYS.test(key.trim()) || DATA_KEYS.has(key.trim())) return null;
     options[key.trim()] = value;
   }
   return options;
 }
 
 // Form fields → options JSON. Returns null when the extra options can't be read.
-export function toVariantOptions(fields: VariantFields): Record<string, string | string[]> | null {
+export function toVariantOptions(fields: VariantFields): Record<string, string | string[] | number> | null {
   const other = parseOtherOptions(fields.other);
   if (!other) return null;
   const hex = fields.hex || suggestedShade(fields.colour);
@@ -92,6 +110,21 @@ export function toVariantOptions(fields: VariantFields): Record<string, string |
     ...(hex ? { [HEX_KEY]: hex.toLowerCase() } : {}),
     ...other,
     ...(fields.imageIds.length ? { [IMAGES_KEY]: fields.imageIds } : {}),
+    ...(fields.compareAtPrice !== undefined ? { [COMPARE_KEY]: fields.compareAtPrice } : {}),
+    ...(fields.stock !== undefined ? { [STOCK_KEY]: fields.stock } : {}),
+  };
+}
+
+// What the product row itself must carry now that price and stock live on the attributes:
+// the first active attribute's price (the one customers see first), its compare-at price,
+// and the total stock of active attributes (what checkout enforces).
+export function productTotals(attributes: { status: string; price: number; compareAtPrice?: number; stock: number }[]) {
+  const active = attributes.filter((attribute) => attribute.status === "ACTIVE");
+  const lead = active[0] ?? attributes[0];
+  return {
+    price: lead?.price ?? 0,
+    compareAtPrice: lead?.compareAtPrice,
+    quantity: active.reduce((sum, attribute) => sum + attribute.stock, 0),
   };
 }
 

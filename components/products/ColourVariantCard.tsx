@@ -20,19 +20,21 @@ interface ColourVariantCardProps {
   row: VariantRow;
   productName: string;
   canAddPhotos: boolean;
+  // A product keeps at least one attribute (it holds the price, stock and photos).
+  canRemove: boolean;
   onChange: (patch: Partial<VariantRow>) => void;
   onPhotos: (change: (photos: ImageRow[]) => ImageRow[]) => void;
   onUpload: (files: File[]) => void;
   onRemove: () => void;
 }
 
-// One colour of a product: swatch, SKU, price, extra options, status and its own photos.
-export function ColourVariantCard({ index, row, productName, canAddPhotos, onChange, onPhotos, onUpload, onRemove }: ColourVariantCardProps) {
+// One attribute (colour) of a product: swatch, SKU, prices, stock, extra options, status and its own photos.
+export function ColourVariantCard({ index, row, productName, canAddPhotos, canRemove, onChange, onPhotos, onUpload, onRemove }: ColourVariantCardProps) {
   const id = useId();
   // The shade the storefront will show: the picked one, else the default for the colour name.
   const autoShade = suggestedShade(row.colour);
   const shade = row.hex || autoShade || FALLBACK_SHADE;
-  const title = variantName({ colour: row.colour, other: row.other }) || `Colour ${index + 1}`;
+  const title = variantName({ colour: row.colour, other: row.other }) || `Attribute ${index + 1}`;
   const uploading = row.photos.some((photo) => photo.uploading);
 
   return (
@@ -43,15 +45,20 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, onCha
           style={{ background: shade }}
           aria-hidden="true"
         />
-        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-900">{title}</p>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${title}`}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-900">
+          {title}
+          {index === 0 && <span className="ml-2 text-xs font-normal text-zinc-400">Shown first</span>}
+        </p>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove ${title}`}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -107,14 +114,41 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, onCha
         </label>
 
         <label className="flex flex-col gap-1">
+          <span className={labelText}>Stock</span>
+          <input
+            type="number"
+            step="1"
+            min="0"
+            value={row.stock}
+            placeholder="0"
+            onChange={(e) => onChange({ stock: e.target.value })}
+            className={field}
+          />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
           <span className={labelText}>Price</span>
           <input
             type="number"
             step="0.01"
             min="0"
             value={row.price}
-            placeholder="Product price"
+            placeholder="0.00"
             onChange={(e) => onChange({ price: e.target.value })}
+            className={field}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelText}>Compare-at price (optional)</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={row.compareAtPrice}
+            placeholder="Shown struck through"
+            onChange={(e) => onChange({ compareAtPrice: e.target.value })}
             className={field}
           />
         </label>
@@ -145,7 +179,7 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, onCha
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className={labelText}>Photos for this colour</span>
+        <span className={labelText}>Photos</span>
         <ul className="flex flex-wrap gap-2">
           {row.photos.map((photo, photoIndex) => (
             <li key={photo.key} className="relative">
@@ -172,7 +206,7 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, onCha
                 htmlFor={`${id}-photos`}
                 aria-disabled={uploading}
                 className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border-2 border-dashed border-zinc-300 bg-white text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
-                title="Add photos for this colour"
+                title="Add photos"
               >
                 <ImagePlus className="h-5 w-5" aria-hidden="true" />
                 <span className="text-[10px] font-medium">Add</span>
@@ -195,8 +229,8 @@ export function ColourVariantCard({ index, row, productName, canAddPhotos, onCha
         </ul>
         <p className="text-xs text-zinc-500">
           {row.photos.length
-            ? "Shown instead of the main images when a customer picks this colour."
-            : "None yet: the main product images are shown for this colour."}
+            ? `Shown when a customer picks this colour.${index === 0 ? " The first photo is the product's listing image." : ""}`
+            : "No photos yet. Add at least one so customers can see this colour."}
         </p>
       </div>
     </li>

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   fromVariantOptions,
   parseOtherOptions,
+  productTotals,
   splitImages,
   suggestedShade,
   toVariantOptions,
@@ -39,6 +40,27 @@ test("extra options must be Name: Value and can't reuse the reserved keys", () =
 test("variant name is the colour plus extra option values", () => {
   assert.equal(variantName({ colour: "Beige", other: "" }), "Beige");
   assert.equal(variantName({ colour: "Beige", other: "Size: L" }), "Beige / L");
+});
+
+test("compare-at price and stock round-trip and are never extra options", () => {
+  const fields = fromVariantOptions({ Color: "Beige", compareAtPrice: 9999, stock: "12" }, "Beige");
+  assert.equal(fields.compareAtPrice, 9999);
+  assert.equal(fields.stock, 12);
+  assert.equal(fields.other, "");
+  assert.deepEqual(toVariantOptions({ ...fields, imageIds: [] }), { Color: "Beige", ColorHex: "#c8a97e", compareAtPrice: 9999, stock: 12 });
+  assert.equal(parseOtherOptions("stock: 3"), null);
+});
+
+test("productTotals: first active attribute's prices, total stock of active attributes", () => {
+  assert.deepEqual(
+    productTotals([
+      { status: "DRAFT", price: 5000, stock: 9 },
+      { status: "ACTIVE", price: 7499, compareAtPrice: 9999, stock: 4 },
+      { status: "ACTIVE", price: 7000, stock: 6 },
+    ]),
+    { price: 7499, compareAtPrice: 9999, quantity: 10 }
+  );
+  assert.deepEqual(productTotals([{ status: "DRAFT", price: 5000, stock: 3 }]), { price: 5000, compareAtPrice: undefined, quantity: 0 });
 });
 
 test("splitImages separates the main gallery from each variant's photos, in the variant's order", () => {
