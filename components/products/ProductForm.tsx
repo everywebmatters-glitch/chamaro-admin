@@ -31,6 +31,8 @@ import {
 } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
+import { fromVariantOptions, splitImages, toVariantOptions, variantName } from "@/lib/variant-form";
+import { ColourVariantCard } from "./ColourVariantCard";
 
 interface ProductFormProps {
   mode: "create" | "edit";
@@ -40,7 +42,7 @@ interface ProductFormProps {
 type Field = "name" | "slug" | "description" | "features" | "materials" | "specifications" | "returnPolicy" | "warranty" | "price" | "compareAtPrice" | "sku" | "quantity" | "categoryId" | "images" | "variants";
 type FieldErrors = Partial<Record<Field, string>>;
 
-interface ImageRow {
+export interface ImageRow {
   key: string;
   // Set once the file is stored by the API; null while uploading and for legacy external images.
   mediaId: string | null;
@@ -59,13 +61,16 @@ interface SpecRow {
   value: string;
 }
 
-interface VariantRow {
+// One colour of the product: its own SKU, price and photos (see lib/variant-form.ts).
+export interface VariantRow {
   key: string;
-  name: string;
+  colour: string;
+  hex: string; // "#rrggbb", or "" for the default shade of the colour name
   sku: string;
   price: string;
-  options: string; // "Colour: Black, Size: L"
+  other: string; // extra options, "Size: L"
   status: ProductStatusCode;
+  photos: ImageRow[];
 }
 
 // Limits mirror the product body schema in backend/src/routes/product.routes.ts and the Prisma columns behind it.
@@ -107,21 +112,8 @@ function priceText(value: string | null | undefined): string {
   return value == null ? "" : Number(value).toFixed(2);
 }
 
-function optionsToText(options: Record<string, unknown>): string {
-  return Object.entries(options)
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(", ");
-}
-
-function parseOptions(text: string): Record<string, string> | null {
-  const options: Record<string, string> = {};
-  for (const part of text.split(",").map((p) => p.trim()).filter(Boolean)) {
-    const [key, ...rest] = part.split(":");
-    const value = rest.join(":").trim();
-    if (!key.trim() || !value) return null;
-    options[key.trim()] = value;
-  }
-  return options;
+function toImageRow(image: ApiProduct["images"][number]): ImageRow {
+  return { key: image.id, mediaId: image.mediaId, url: image.url, altText: image.altText ?? "", isPrimary: image.isPrimary };
 }
 
 // Exactly one primary image whenever there are images.
@@ -207,24 +199,34 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
   const [slugEdited, setSlugEdited] = useState(Boolean(product));
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
   const [status, setStatus] = useState<ProductStatusCode>(product?.status ?? "ACTIVE");
-  const [images, setImages] = useState<ImageRow[]>(
-    [...(product?.images ?? [])]
-      .sort((a, b) => a.position - b.position)
-      .map((image) => ({ key: image.id, mediaId: image.mediaId, url: image.url, altText: image.altText ?? "", isPrimary: image.isPrimary }))
+  // A colour's own photos are product images too; they are listed under that colour, not in Media.
+  const [initial] = useState(() =>
+    splitImages(
+      [...(product?.images ?? [])].sort((a, b) => a.position - b.position),
+      product?.variants ?? []
+    )
   );
+  const [images, setImages] = useState<ImageRow[]>(initial.main.map(toImageRow));
   const [imagesDirty, setImagesDirty] = useState(false);
-  const uploading = images.some((row) => row.uploading);
   const [variants, setVariants] = useState<VariantRow[]>(
-    (product?.variants ?? []).map((v) => ({
-      key: v.id,
-      name: v.name,
-      sku: v.sku,
-      price: priceText(v.price),
-      options: optionsToText(v.options),
-      status: v.status,
-    }))
+    (product?.variants ?? []).map((v, index) => {
+      const fields = fromVariantOptions(v.options, v.name);
+      return {
+        key: v.id,
+        colour: fields.colour,
+        hex: fields.hex,
+        sku: v.sku,
+        price: priceText(v.price),
+        other: fields.other,
+        status: v.status,
+        photos: initial.byVariant[index].map((image) => ({ ...toImageRow(image), isPrimary: false })),
+      };
+    })
   );
   const [variantsDirty, setVariantsDirty] = useState(false);
+  const uploading = images.some((row) => row.uploading) || variants.some((row) => row.photos.some((photo) => photo.uploading));
+  // The API allows 20 images per product, counting every colour's photos.
+  const imageCount = images.length + variants.reduce((sum, row) => sum + row.photos.length, 0);
   const [specs, setSpecs] = useState<SpecRow[]>((product?.specifications ?? []).map((spec) => ({ key: newKey(), ...spec })));
   const [categories, setCategories] = useState<ApiCategory[] | null>(null);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
@@ -263,7 +265,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
       if (problem) problems.push(problem);
       return !problem;
     });
-    const room = MAX_IMAGES - images.length;
+    const room = MAX_IMAGES - imageCount;
     if (accepted.length > room) {
       problems.push(`A product can have up to ${MAX_IMAGES} images.`);
       accepted.splice(Math.max(room, 0));
@@ -306,6 +308,60 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     setVariants((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
     setVariantsDirty(true);
     clearFieldError("variants");
+    // A colour's photos are saved with the product's images.
+    if (patch.photos) setImagesDirty(true);
+  }
+
+  function updatePhotos(key: string, change: (photos: ImageRow[]) => ImageRow[]) {
+    setVariants((rows) => rows.map((row) => (row.key === key ? { ...row, photos: change(row.photos) } : row)));
+    setVariantsDirty(true);
+    setImagesDirty(true);
+  }
+
+  // Same flow as uploadFiles, for one colour's photos.
+  async function uploadVariantPhotos(key: string, files: File[]) {
+    const problems: string[] = [];
+    const accepted = files.filter((file) => {
+      const problem = imageFileProblem(file);
+      if (problem) problems.push(problem);
+      return !problem;
+    });
+    const room = MAX_IMAGES - imageCount;
+    if (accepted.length > room) {
+      problems.push(`A product can have up to ${MAX_IMAGES} images, including every colour's photos.`);
+      accepted.splice(Math.max(room, 0));
+    }
+    setFieldErrors((prev) => ({ ...prev, variants: problems.join(" ") || undefined }));
+    if (!accepted.length) return;
+
+    const pending: ImageRow[] = accepted.map((file) => ({
+      key: newKey(),
+      mediaId: null,
+      url: URL.createObjectURL(file),
+      altText: "",
+      isPrimary: false,
+      uploading: true,
+      filename: file.name,
+    }));
+    updatePhotos(key, (photos) => [...photos, ...pending]);
+
+    const token = getSessionToken() ?? "";
+    await Promise.all(
+      pending.map(async (row, index) => {
+        const file = accepted[index];
+        try {
+          const media = await uploadMedia(token, file);
+          updatePhotos(key, (photos) => photos.map((p) => (p.key === row.key ? { ...p, mediaId: media.id, url: media.url, uploading: false } : p)));
+        } catch (error) {
+          const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Upload failed.");
+          if (apiError.status === 401) return logout();
+          updatePhotos(key, (photos) => photos.filter((p) => p.key !== row.key));
+          setFieldErrors((prev) => ({ ...prev, variants: [prev.variants, uploadErrorMessage(file, apiError)].filter(Boolean).join(" ") }));
+        } finally {
+          if (row.url) URL.revokeObjectURL(row.url);
+        }
+      })
+    );
   }
 
   function validate(form: FormData) {
@@ -366,38 +422,46 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
     // Only uploaded images can be saved. A legacy external image is kept as long as the images
     // aren't changed; once they are, the admin must remove it (the API no longer accepts URLs).
     const imagesWillBeSent = mode === "create" || imagesDirty;
-    const imageInputs: ProductImageInput[] = images
-      .filter((image) => image.mediaId)
-      .map((image, position) => ({
-        mediaId: image.mediaId!,
-        position,
-        isPrimary: image.isPrimary,
-        ...(image.altText.trim() ? { altText: image.altText.trim() } : {}),
-      }));
+    // Main images first, then each colour's own photos (never primary: those only show for that colour).
+    const imageInputs: ProductImageInput[] = [
+      ...images.filter((image) => image.mediaId),
+      ...variants.flatMap((row) => row.photos.filter((photo) => photo.mediaId).map((photo) => ({ ...photo, isPrimary: false }))),
+    ].map((image, position) => ({
+      mediaId: image.mediaId!,
+      position,
+      isPrimary: image.isPrimary,
+      ...(image.altText.trim() ? { altText: image.altText.trim() } : {}),
+    }));
     if (uploading) errors.images = "Wait for the images to finish uploading.";
     else if (imagesWillBeSent && images.some((image) => !image.mediaId)) errors.images = "Remove the external image before saving image changes. Upload a replacement instead.";
     else if (images.some((image) => image.altText.trim().length > MAX_ALT_TEXT)) errors.images = `Alt text must be ${MAX_ALT_TEXT} characters or fewer.`;
 
     const variantInputs: ProductVariantInput[] = [];
     const seenSkus = new Set<string>();
+    const seenColours = new Set<string>();
     for (const row of variants) {
-      const variantName = row.name.trim();
+      const colour = row.colour.trim();
       const variantSku = row.sku.trim();
-      const options = parseOptions(row.options);
+      const imageIds = row.photos.flatMap((photo) => (photo.mediaId ? [photo.mediaId] : []));
+      const options = toVariantOptions({ colour, hex: row.hex, other: row.other, imageIds });
+      const name = variantName({ colour, other: row.other });
       const variantPrice = row.price.trim();
       let problem: string | undefined;
-      if (!variantName || variantName.length > MAX_TEXT) problem = "Each variant needs a name (up to 191 characters).";
-      else if (!variantSku || variantSku.length > MAX_TEXT) problem = "Each variant needs a SKU (up to 191 characters).";
-      else if (seenSkus.has(variantSku.toLowerCase())) problem = `Variant SKU "${variantSku}" is used twice.`;
-      else if (!options) problem = `Write options for "${variantName}" as Name: Value, separated by commas.`;
-      else if (variantPrice && (!PRICE_PATTERN.test(variantPrice) || Number(variantPrice) > MAX_PRICE)) problem = `Enter a valid price for "${variantName}", or leave it empty.`;
+      if (!colour || colour.length > MAX_TEXT) problem = "Each colour needs a name (up to 191 characters).";
+      else if (!options) problem = `Write the extra options for "${colour}" as Name: Value, e.g. Size: L.`;
+      else if (seenColours.has(name.toLowerCase())) problem = `"${name}" is listed twice.`;
+      else if (name.length > MAX_TEXT) problem = `"${name}" is too long; shorten the colour or extra options.`;
+      else if (!variantSku || variantSku.length > MAX_TEXT) problem = `"${name}" needs a SKU (up to 191 characters).`;
+      else if (seenSkus.has(variantSku.toLowerCase())) problem = `SKU "${variantSku}" is used twice.`;
+      else if (variantPrice && (!PRICE_PATTERN.test(variantPrice) || Number(variantPrice) > MAX_PRICE)) problem = `Enter a valid price for "${name}", or leave it empty to use the product price.`;
       if (problem) {
         errors.variants = problem;
         break;
       }
       seenSkus.add(variantSku.toLowerCase());
+      seenColours.add(name.toLowerCase());
       variantInputs.push({
-        name: variantName,
+        name,
         sku: variantSku,
         options: options!,
         status: row.status,
@@ -738,7 +802,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
               {fieldErrors.images}
             </p>
           )}
-          {images.length < MAX_IMAGES && (
+          {imageCount < MAX_IMAGES && (
             <ImageUploader
               label={images.length ? "Add more images" : "Product images"}
               aspect="wide"
@@ -812,81 +876,51 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
         </FormSection>
 
         <FormSection
-          title="Variants"
-          description="Optional. Options are written as Name: Value pairs, e.g. Colour: Black, Size: L. Leave a variant's price empty to use the product price."
+          title="Colours"
+          description="Optional. Each colour is sold with its own SKU, price and photos; customers pick it from the colour swatches. Leave a colour's price empty to use the product price, and its photos empty to show the main product images."
         >
           {variants.length > 0 && (
-            <div className="relative overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead>
-                  <tr className="text-xs text-zinc-500">
-                    <th className="pb-1.5 pr-2 font-medium">Name</th>
-                    <th className="pb-1.5 pr-2 font-medium">SKU</th>
-                    <th className="pb-1.5 pr-2 font-medium">Price</th>
-                    <th className="pb-1.5 pr-2 font-medium">Options</th>
-                    <th className="pb-1.5 pr-2 font-medium">Status</th>
-                    <th className="pb-1.5">
-                      <span className="sr-only">Remove</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {variants.map((row, index) => {
-                    const cell = "h-8 w-full rounded-md border border-zinc-300 px-2 text-sm outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-900/10";
-                    return (
-                      <tr key={row.key}>
-                        <td className="py-1 pr-2">
-                          <input aria-label={`Variant ${index + 1} name`} value={row.name} maxLength={MAX_TEXT} onChange={(e) => updateVariant(row.key, { name: e.target.value })} className={cell} />
-                        </td>
-                        <td className="py-1 pr-2">
-                          <input aria-label={`Variant ${index + 1} SKU`} value={row.sku} maxLength={MAX_TEXT} onChange={(e) => updateVariant(row.key, { sku: e.target.value })} className={cell} />
-                        </td>
-                        <td className="w-28 py-1 pr-2">
-                          <input aria-label={`Variant ${index + 1} price`} type="number" step="0.01" min="0" value={row.price} onChange={(e) => updateVariant(row.key, { price: e.target.value })} className={cell} />
-                        </td>
-                        <td className="py-1 pr-2">
-                          <input aria-label={`Variant ${index + 1} options`} placeholder="Colour: Black" value={row.options} onChange={(e) => updateVariant(row.key, { options: e.target.value })} className={cell} />
-                        </td>
-                        <td className="w-28 py-1 pr-2">
-                          <select aria-label={`Variant ${index + 1} status`} value={row.status} onChange={(e) => updateVariant(row.key, { status: e.target.value as ProductStatusCode })} className={cell}>
-                            <option value="ACTIVE">Active</option>
-                            <option value="DRAFT">Draft</option>
-                            <option value="ARCHIVED">Archived</option>
-                          </select>
-                        </td>
-                        <td className="py-1">
-                          <button
-                            type="button"
-                            aria-label={`Remove variant ${index + 1}`}
-                            onClick={() => {
-                              setVariants((rows) => rows.filter((r) => r.key !== row.key));
-                              setVariantsDirty(true);
-                              clearFieldError("variants");
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <ul className="flex flex-col gap-3">
+              {variants.map((row, index) => (
+                <ColourVariantCard
+                  key={row.key}
+                  index={index}
+                  row={row}
+                  productName={name}
+                  canAddPhotos={imageCount < MAX_IMAGES}
+                  onChange={(patch) => updateVariant(row.key, patch)}
+                  onPhotos={(change) => updatePhotos(row.key, change)}
+                  onUpload={(files) => uploadVariantPhotos(row.key, files)}
+                  onRemove={() => {
+                    setVariants((rows) => rows.filter((r) => r.key !== row.key));
+                    setVariantsDirty(true);
+                    // Its photos leave the product's images too.
+                    if (row.photos.length) setImagesDirty(true);
+                    clearFieldError("variants");
+                  }}
+                />
+              ))}
+            </ul>
           )}
-          {fieldErrors.variants && <p className="text-xs text-red-600">{fieldErrors.variants}</p>}
+          {fieldErrors.variants && (
+            <p role="alert" className="text-xs text-red-600">
+              {fieldErrors.variants}
+            </p>
+          )}
           <div>
             <Button
               type="button"
               variant="secondary"
               icon={<Plus className="h-4 w-4" />}
               onClick={() => {
-                setVariants((rows) => [...rows, { key: newKey(), name: "", sku: "", price: "", options: "", status: "ACTIVE" }]);
+                setVariants((rows) => [
+                  ...rows,
+                  { key: newKey(), colour: "", hex: "", sku: "", price: "", other: "", status: "ACTIVE", photos: [] },
+                ]);
                 setVariantsDirty(true);
               }}
             >
-              Add variant
+              Add colour
             </Button>
           </div>
         </FormSection>
