@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Images,
   FileText,
+  LayoutTemplate,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -52,6 +53,7 @@ export const navSections: NavSection[] = [
     icon: Images,
     items: [
       { label: "Banners", href: "/banners", icon: ImageIcon },
+      { label: "Collection Section", href: "/collection-section", icon: LayoutTemplate },
       { label: "Pages", href: "/cms-pages", icon: FileText },
       { label: "Media", href: "/media", icon: Images },
     ],
@@ -77,6 +79,7 @@ export const pageTitles: Record<string, string> = {
   "/customers": "Customers",
   "/banners": "Banners",
   "/banners/new": "Add Banner",
+  "/collection-section": "Collection Section",
   "/cms-pages": "Pages",
   "/cms-pages/new": "Add Page",
   "/media": "Media Library",
