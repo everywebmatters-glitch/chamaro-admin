@@ -19,13 +19,18 @@ export function loginAdmin(email: string, password: string) {
   return apiRequest<AdminLoginResult>("/auth/admin/login", { method: "POST", body: { email, password } });
 }
 
-// The API answers the same whether or not the email has an account, so this never says which.
-export function requestPasswordResetLink(email: string) {
-  return apiRequest<{ message: string }>("/auth/forgot-password/request-link", { method: "POST", body: { email } });
+// Password reset by emailed 6-digit code. The send answers the same whether or not the email has an account.
+export function sendPasswordResetCode(email: string) {
+  return apiRequest<{ message: string }>("/auth/forgot-password/send-otp", { method: "POST", body: { email } });
 }
 
-export function resetPasswordWithToken(token: string, newPassword: string) {
-  return apiRequest<{ message: string }>("/auth/reset-password", { method: "POST", body: { token, newPassword } });
+// Checks the code without using it up, so the new-password step can follow; reset below checks it again.
+export function verifyPasswordResetCode(email: string, otp: string) {
+  return apiRequest<{ verified: true }>("/auth/forgot-password/verify-otp", { method: "POST", body: { email, otp } });
+}
+
+export function resetPasswordWithCode(email: string, otp: string, newPassword: string) {
+  return apiRequest<{ message: string }>("/auth/forgot-password/reset", { method: "POST", body: { email, otp, newPassword } });
 }
 
 export function fetchCurrentAdmin(token: string, signal?: AbortSignal) {

@@ -8,7 +8,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import { routePath } from "@/lib/utils";
 
 // Routes that render without the admin chrome (sidebar/header) — public/auth screens.
-const CHROMELESS_ROUTES = ["/login", "/forgot-password", "/reset-password"];
+const CHROMELESS_ROUTES = ["/login", "/forgot-password"];
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = routePath(usePathname());
