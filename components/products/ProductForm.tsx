@@ -142,9 +142,13 @@ function initialAttributes(product?: ApiProduct): VariantRow[] {
       hex: fields.hex,
       sku: variant.sku,
       price: priceText(variant.price ?? product.price),
-      compareAtPrice: priceText(fields.compareAtPrice ?? (variant.price == null ? product.compareAtPrice : null)),
-      // Before per-attribute stock, the product's stock covered every variant; the first one keeps it.
-      stock: String(fields.stock ?? (index === 0 ? product.inventory?.quantity ?? 0 : 0)),
+      // Variants saved before compare-at prices were per attribute showed the product's when priced like it (as the storefront does).
+      compareAtPrice: priceText(
+        fields.compareAtPrice ?? (variant.price == null || Number(variant.price) === Number(product.price) ? product.compareAtPrice : null)
+      ),
+      // Before per-attribute stock, the product's stock covered every variant: the first one keeps it and the
+      // others start empty, so the admin enters their stock before saving instead of them silently selling out.
+      stock: fields.stock !== undefined ? String(fields.stock) : index === 0 ? String(product.inventory?.quantity ?? 0) : "",
       other: fields.other,
       status: variant.status,
       photos: byVariant[index].map(toImageRow),
