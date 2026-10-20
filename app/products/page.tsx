@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, MoreHorizontal, Package, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreHorizontal, Package, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { FilterDropdown } from "@/components/ui/FilterDropdown";
@@ -17,7 +17,8 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAdminSession } from "@/components/auth/AuthProvider";
 import { ApiError } from "@/lib/api/client";
-import { deleteAdminProduct, listAdminProducts, type ApiProduct, type ProductStatusCode } from "@/lib/api/products";
+import { duplicateProductInput } from "@/lib/product-duplicate";
+import { createAdminProduct, deleteAdminProduct, listAdminProducts, type ApiProduct, type ProductStatusCode } from "@/lib/api/products";
 import { listAdminCategories, type ApiCategory } from "@/lib/api/categories";
 import { getSessionToken } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -51,6 +52,7 @@ function SavedBanner() {
 }
 
 function ProductsList() {
+  const router = useRouter();
   const { logout } = useAdminSession();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -62,7 +64,32 @@ function ProductsList() {
   const [result, setResult] = useState<Result | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ApiProduct | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  // Creates a draft copy, retrying with "-copy-2", "-copy-3"... when the slug or a SKU is already taken.
+  async function duplicate(product: ApiProduct) {
+    if (duplicatingId) return;
+    setDuplicatingId(product.id);
+    setNotice(null);
+    try {
+      const token = getSessionToken() ?? "";
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const copy = await createAdminProduct(token, duplicateProductInput(product, attempt));
+          router.push(`/products/${copy.id}/edit`);
+          return;
+        } catch (error) {
+          if (!(error instanceof ApiError && error.status === 409 && attempt < 10)) throw error;
+        }
+      }
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : new ApiError(0, "UNKNOWN", "Couldn't duplicate the product.");
+      if (apiError.status === 401) return logout();
+      setNotice({ tone: "error", text: `Couldn't duplicate “${product.name}”: ${apiError.message}` });
+      setDuplicatingId(null);
+    }
+  }
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -183,6 +210,16 @@ function ProductsList() {
           >
             <Pencil className="h-4 w-4" />
           </Link>
+          <button
+            type="button"
+            aria-label={`Duplicate ${p.name}`}
+            title="Duplicate as a draft"
+            disabled={duplicatingId !== null}
+            onClick={() => void duplicate(p)}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            <Copy className="h-4 w-4" />
+          </button>
           <button
             type="button"
             aria-label={`Delete ${p.name}`}
