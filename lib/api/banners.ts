@@ -5,6 +5,7 @@ import type { ProductStatusCode } from "@/lib/api/products";
 export interface ApiBanner {
   id: string;
   title: string;
+  subtitle: string | null;
   imageUrl: string;
   mobileImageUrl: string | null;
   linkUrl: string | null;
@@ -23,6 +24,7 @@ export interface ApiBanner {
 // accepts values for the optional fields, so an edit can change them but cannot blank one that is already set.
 export interface BannerInput {
   title: string;
+  subtitle?: string; // "" clears it
   imageUrl: string;
   mobileImageUrl?: string;
   linkUrl?: string;

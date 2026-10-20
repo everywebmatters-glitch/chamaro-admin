@@ -6,7 +6,7 @@ const valid = { ...EMPTY_BANNER, title: "Autumn", imageUrl: "https://example.com
 
 test("a minimal valid banner has no errors and sends only the filled fields", () => {
   assert.deepEqual(validateBanner(valid), {});
-  assert.deepEqual(toBannerInput(valid), { title: "Autumn", imageUrl: "https://example.com/a.jpg", status: "DRAFT", position: 0 });
+  assert.deepEqual(toBannerInput(valid), { title: "Autumn", subtitle: "", imageUrl: "https://example.com/a.jpg", status: "DRAFT", position: 0 });
 });
 
 test("title and image are required; addresses must be http(s)", () => {
@@ -32,9 +32,10 @@ test("the schedule end must be after the start; dates are sent as ISO strings", 
 });
 
 test("form values round-trip through a stored banner", () => {
-  const stored = { id: "b", title: "T", imageUrl: "https://x/y.png", mobileImageUrl: null, linkUrl: "https://x/shop", altText: null, status: "ACTIVE", position: 3, pageId: null, publishedAt: null, startAt: "2026-10-20T04:30:00.000Z", endAt: null, createdAt: "", updatedAt: "" } as const;
+  const stored = { id: "b", title: "T", subtitle: "Sub", imageUrl: "https://x/y.png", mobileImageUrl: null, linkUrl: "https://x/shop", altText: null, status: "ACTIVE", position: 3, pageId: null, publishedAt: null, startAt: "2026-10-20T04:30:00.000Z", endAt: null, createdAt: "", updatedAt: "" } as const;
   const values = fromBanner(stored);
   assert.equal(values.position, "3");
+  assert.equal(values.subtitle, "Sub");
   assert.equal(values.mobileImageUrl, "");
   assert.equal(new Date(values.startAt).toISOString(), "2026-10-20T04:30:00.000Z");
   assert.equal(toLocalInput(null), "");

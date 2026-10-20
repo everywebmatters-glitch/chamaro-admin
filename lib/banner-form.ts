@@ -3,6 +3,7 @@ import type { ApiBanner, BannerInput } from "@/lib/api/banners";
 
 export interface BannerFormValues {
   title: string;
+  subtitle: string;
   imageUrl: string;
   mobileImageUrl: string;
   linkUrl: string;
@@ -15,6 +16,7 @@ export interface BannerFormValues {
 
 export const EMPTY_BANNER: BannerFormValues = {
   title: "",
+  subtitle: "",
   imageUrl: "",
   mobileImageUrl: "",
   linkUrl: "",
@@ -47,6 +49,7 @@ export function toLocalInput(iso: string | null): string {
 export function fromBanner(banner: ApiBanner): BannerFormValues {
   return {
     title: banner.title,
+    subtitle: banner.subtitle ?? "",
     imageUrl: banner.imageUrl,
     mobileImageUrl: banner.mobileImageUrl ?? "",
     linkUrl: banner.linkUrl ?? "",
@@ -64,6 +67,7 @@ export function validateBanner(values: BannerFormValues): BannerErrors {
   const errors: BannerErrors = {};
   if (!values.title.trim()) errors.title = "Enter a title.";
   else if (values.title.trim().length > 191) errors.title = "Use 191 characters or fewer.";
+  if (values.subtitle.length > 500) errors.subtitle = "Use 500 characters or fewer.";
   if (!values.imageUrl.trim()) errors.imageUrl = "Upload an image or paste its web address.";
   else if (!isWebUrl(values.imageUrl.trim())) errors.imageUrl = "The image address must start with http:// or https://.";
   if (values.mobileImageUrl.trim() && !isWebUrl(values.mobileImageUrl.trim())) errors.mobileImageUrl = "The address must start with http:// or https://.";
@@ -86,6 +90,7 @@ export function toBannerInput(values: BannerFormValues): BannerInput {
   const altText = optional(values.altText);
   return {
     title: values.title.trim(),
+    subtitle: values.subtitle.trim(), // always sent, so an edit can clear it
     imageUrl: values.imageUrl.trim(),
     ...(mobileImageUrl ? { mobileImageUrl } : {}),
     ...(linkUrl ? { linkUrl } : {}),

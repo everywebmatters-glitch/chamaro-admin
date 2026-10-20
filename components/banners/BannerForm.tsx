@@ -191,14 +191,15 @@ export function BannerForm({ mode, bannerId }: BannerFormProps) {
 
       <div className="rounded-lg border border-zinc-200 bg-white px-5">
         <FormSection title="Images" description="The main banner image, and an optional narrower one for phones.">
-          {imageField("imageUrl", "Banner image", "Recommended size 1920x800px. The image fills the hero and is cropped to fit, so keep the important part in the middle.", errors.imageUrl)}
+          {imageField("imageUrl", "Banner image", "Recommended size 1920x800px. The image fills the hero and is cropped to fit. The heading, sub heading and button sit on the left, so keep that side calm.", errors.imageUrl)}
           {imageField("mobileImageUrl", "Mobile image (optional)", "Shown instead of the main image on small screens.", errors.mobileImageUrl)}
           {mode === "edit" && <p className="text-xs text-zinc-500">The API can change an optional image or link but not clear it. To remove one, delete the banner and create it again.</p>}
         </FormSection>
 
-        <FormSection title="Content" description="Title, link and description of the image.">
-          <Input label="Title" name="title" placeholder="e.g. Autumn Collection Is Here" value={values.title} onChange={(event) => set("title", event.target.value)} error={errors.title} required />
-          <Input label="Link (optional)" name="linkUrl" placeholder="https://..." value={values.linkUrl} onChange={(event) => set("linkUrl", event.target.value)} error={errors.linkUrl} hint="Where the banner leads when clicked." />
+        <FormSection title="Content" description="The heading and sub heading shown over the image, plus the link and description.">
+          <Input label="Heading" name="title" placeholder="e.g. Engineered to Lead" value={values.title} onChange={(event) => set("title", event.target.value)} error={errors.title} required />
+          <Input label="Sub heading (optional)" name="subtitle" placeholder="e.g. Premium seating designed for professionals" value={values.subtitle} onChange={(event) => set("subtitle", event.target.value)} error={errors.subtitle} hint="Shown under the heading. The Shop collection button and the text position are fixed." />
+          <Input label="Shop collection link (optional)" name="linkUrl" placeholder="https://..." value={values.linkUrl} onChange={(event) => set("linkUrl", event.target.value)} error={errors.linkUrl} hint="Where the Shop collection button leads. Without one it goes to All Products." />
           <Input label="Image description (optional)" name="altText" value={values.altText} onChange={(event) => set("altText", event.target.value)} error={errors.altText} hint="Read aloud by screen readers." />
         </FormSection>
 
