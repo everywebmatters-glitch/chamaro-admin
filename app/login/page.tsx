@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Eye, EyeOff, Loader2, Store } from "lucide-react";
 import { Input } from "@/components/ui/Input";
@@ -138,9 +139,9 @@ function LoginForm() {
           </form>
 
           <div className="mt-5 text-center">
-            <a href="#" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">
+            <Link href="/forgot-password" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">
               Forgot password?
-            </a>
+            </Link>
           </div>
         </div>
       </div>
