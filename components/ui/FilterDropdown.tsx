@@ -14,12 +14,12 @@ interface FilterDropdownProps {
 
 export function FilterDropdown({ label, value, options, onChange }: FilterDropdownProps) {
   return (
-    <div className="relative">
+    <div className="relative w-full sm:w-auto">
       <select
         aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 appearance-none rounded-md border border-zinc-300 bg-white pl-3 pr-8 text-sm text-zinc-700 outline-none transition-colors focus:border-zinc-500 focus:ring-2 focus:ring-zinc-900/10"
+        className="h-9 w-full appearance-none rounded-md border border-zinc-300 bg-white pl-3 pr-8 text-sm text-zinc-700 outline-none transition-colors focus:border-zinc-500 focus:ring-2 focus:ring-zinc-900/10"
       >
         <option value="">{label}</option>
         {options.map((option) => {

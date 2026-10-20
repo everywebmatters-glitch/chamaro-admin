@@ -34,9 +34,9 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className="relative z-10 w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl"
+        className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col rounded-lg border border-zinc-200 bg-white shadow-xl"
       >
-        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 id="modal-title" className="text-sm font-semibold text-zinc-900">
             {title}
           </h2>
@@ -48,9 +48,9 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-5 py-4 text-sm text-zinc-600">{children}</div>
+        <div className="min-h-0 overflow-y-auto px-5 py-4 text-sm text-zinc-600">{children}</div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 px-5 py-4">
             {footer}
           </div>
         )}

@@ -85,11 +85,13 @@ export default function BannersPage() {
     {
       key: "preview",
       header: "Preview",
+      primary: true,
       render: (banner) => <ImagePreview label={banner.title} size="md" src={banner.imageUrl} />,
     },
     {
       key: "title",
       header: "Title",
+      primary: true,
       render: (banner) => (
         <div>
           <Link href={`/banners/edit/?id=${encodeURIComponent(banner.id)}`} className="font-medium text-zinc-900 hover:underline">

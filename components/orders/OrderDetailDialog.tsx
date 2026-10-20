@@ -29,7 +29,7 @@ export function OrderDetailDialog({ order, onClose }: { order: ApiOrder; onClose
             <div>
               <dt className="text-xs text-zinc-400">Customer</dt>
               <dd className="text-zinc-800">{order.customer.user.name}</dd>
-              <dd className="text-zinc-500">{order.customer.user.email}</dd>
+              <dd className="break-words text-zinc-500">{order.customer.user.email}</dd>
             </div>
             <div>
               <dt className="text-xs text-zinc-400">Delivery address</dt>

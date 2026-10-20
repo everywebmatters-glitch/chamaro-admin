@@ -135,7 +135,7 @@ export default function InventoryPage() {
     <div className="flex flex-col gap-5">
       <PageHeader title="Inventory" description="Track stock levels across your catalog. Edit a product to change its stock." />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <StatCard label="In stock" value={inStockCount.toString()} icon={PackageX} />
         <StatCard label="Low stock" value={lowStockCount.toString()} icon={AlertTriangle} />
         <StatCard label="Out of stock" value={outOfStockCount.toString()} icon={PackageX} />

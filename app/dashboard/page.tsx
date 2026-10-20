@@ -96,7 +96,7 @@ export default function DashboardPage() {
   } else {
     content = (
       <>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard
             label="Products"
             value={summary.total.toString()}
@@ -118,7 +118,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard label="Orders" value={ordersReady && "total" in ordersReady ? ordersReady.total.toString() : "—"} note={ordersReady && "error" in ordersReady ? "Couldn't load orders" : undefined} icon={ShoppingCart} />
           <StatCard label="Awaiting payment" value={ordersReady && "awaitingPayment" in ordersReady ? ordersReady.awaitingPayment.toString() : "—"} note="Pending and unpaid" icon={Clock} />
         </div>
@@ -144,7 +144,7 @@ export default function DashboardPage() {
                       <Link href={`/products/${product.id}/edit`} className="truncate font-medium text-zinc-800 hover:underline">
                         {product.name}
                       </Link>
-                      <span className={units <= 0 ? "font-medium text-red-600" : "font-medium text-amber-600"}>
+                      <span className={`shrink-0 whitespace-nowrap font-medium ${units <= 0 ? "text-red-600" : "text-amber-600"}`}>
                         {units <= 0 ? "Out of stock" : `${units} left`}
                       </span>
                     </li>

@@ -14,10 +14,10 @@ interface StatCardProps {
 
 export function StatCard({ label, value, change, trend, note, icon: Icon }: StatCardProps) {
   return (
-    <div className="flex items-start justify-between rounded-lg border border-zinc-200 bg-white p-4">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm text-zinc-500">{label}</span>
-        <span className="text-2xl font-semibold tracking-tight text-zinc-900">{value}</span>
+    <div className="flex items-start justify-between gap-2 rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-xs text-zinc-500 sm:text-sm">{label}</span>
+        <span className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl">{value}</span>
         {note && <span className="text-xs text-zinc-500">{note}</span>}
         {change && (
           <span
@@ -35,7 +35,8 @@ export function StatCard({ label, value, change, trend, note, icon: Icon }: Stat
           </span>
         )}
       </div>
-      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100">
+      {/* Hidden on phones, where the cards sit two or three to a row. */}
+      <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 sm:flex">
         <Icon className="h-[18px] w-[18px] text-zinc-600" />
       </div>
     </div>

@@ -71,6 +71,7 @@ export default function OrdersPage() {
       {
         key: "order",
         header: "Order",
+        primary: true,
         render: (order) => (
           <button type="button" onClick={() => setSelected(order)} className="font-medium text-zinc-900 hover:underline">
             {shortOrderId(order.id)}
@@ -80,10 +81,11 @@ export default function OrdersPage() {
       {
         key: "customer",
         header: "Customer",
+        primary: true,
         render: (order) => (
-          <div>
+          <div className="min-w-0">
             <p className="text-zinc-800">{order.customer.user.name}</p>
-            <p className="text-xs text-zinc-400">{order.customer.user.email}</p>
+            <p className="break-words text-xs text-zinc-400">{order.customer.user.email}</p>
           </div>
         ),
       },

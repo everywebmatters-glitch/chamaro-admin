@@ -816,7 +816,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
           description="Optional. Options are written as Name: Value pairs, e.g. Colour: Black, Size: L. Leave a variant's price empty to use the product price."
         >
           {variants.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead>
                   <tr className="text-xs text-zinc-500">

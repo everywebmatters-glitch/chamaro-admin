@@ -89,7 +89,7 @@ export function Header({ onOpenMobileNav }: HeaderProps) {
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-red-500" />
           </button>
           {notifOpen && (
-            <div className="absolute right-0 top-11 w-72 rounded-lg border border-zinc-200 bg-white py-2 shadow-lg">
+            <div className="absolute right-0 top-11 w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-200 bg-white py-2 shadow-lg">
               <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 Notifications
               </p>
