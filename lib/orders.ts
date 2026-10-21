@@ -40,3 +40,30 @@ export function addressLines(address: ApiOrder["shippingAddress"]): string[] {
   if (!address) return [];
   return [address.name, address.addressLine1, address.addressLine2, `${address.city}, ${address.state} ${address.postalCode}`, address.country, address.phone].filter((line): line is string => Boolean(line && line.trim()));
 }
+
+// ---- shipping by hand ----------------------------------------------------------------------------------------------
+
+const SHIPPABLE: OrderStatusCode[] = ["PENDING", "CONFIRMED", "PROCESSING"];
+
+// Why an order can't be marked shipped here (null = it can). The server makes the final decision, including that the
+// payment is a verified live Razorpay payment; this only decides whether to offer the form.
+export function shipBlockReason(order: Pick<ApiOrder, "status" | "paymentStatus" | "trackingNumber" | "shipment">): string | null {
+  if (order.shipment) return "This order has a Delhivery shipment; its status comes from Delhivery.";
+  if (order.trackingNumber || order.status === "SHIPPED" || order.status === "COMPLETED") return "This order has already been shipped.";
+  if (order.status === "CANCELLED") return "Cancelled orders can't be shipped.";
+  if (order.paymentStatus !== "PAID") return "Only paid orders can be shipped.";
+  if (!SHIPPABLE.includes(order.status)) return "This order can't be shipped.";
+  return null;
+}
+
+// The same limits the API enforces (shipOrderBody in backend order.routes.ts), checked before sending.
+export function validateShipment(input: { carrier: string; trackingNumber: string }): { carrier?: string; trackingNumber?: string } {
+  const errors: { carrier?: string; trackingNumber?: string } = {};
+  const carrier = input.carrier.trim();
+  const tracking = input.trackingNumber.trim();
+  if (!carrier) errors.carrier = "Enter the courier's name.";
+  else if (carrier.length > 64) errors.carrier = "Keep the courier's name under 64 characters.";
+  if (!tracking) errors.trackingNumber = "Enter the tracking number.";
+  else if (tracking.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9 _./-]*$/.test(tracking)) errors.trackingNumber = "Use letters, numbers, spaces and . _ / - only.";
+  return errors;
+}

@@ -142,7 +142,17 @@ export default function OrdersPage() {
 
       {content}
 
-      {selected && <OrderDetailDialog order={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <OrderDetailDialog
+          order={selected}
+          onClose={() => setSelected(null)}
+          onShipped={(updated) => {
+            // The ship endpoint returns the order without its customer; keep the one already loaded.
+            setSelected({ ...selected, ...updated, customer: updated.customer ?? selected.customer });
+            setReloadCount((n) => n + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

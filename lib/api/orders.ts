@@ -1,4 +1,4 @@
-import { apiRequestWithMeta, type PageMeta } from "@/lib/api/client";
+import { apiRequest, apiRequestWithMeta, type PageMeta } from "@/lib/api/client";
 
 // Shapes of GET /api/v1/admin/orders (backend/src/services/order.service.ts). Money amounts are decimal strings in rupees.
 export type OrderStatusCode = "PENDING" | "CONFIRMED" | "PROCESSING" | "SHIPPED" | "COMPLETED" | "CANCELLED";
@@ -38,6 +38,12 @@ export interface ApiOrder {
   // The address as it was when the order was placed.
   shippingAddress: ApiOrderAddress | null;
   note: string | null;
+  // Set together when the order is marked shipped (by hand here, or by Delhivery's tracking).
+  carrier: string | null;
+  trackingNumber: string | null;
+  shippedAt: string | null;
+  // The Delhivery shipment, when the courier integration created one (admins see the full record).
+  shipment?: { waybill: string | null; status: string } | null;
   createdAt: string;
   updatedAt: string;
   items: ApiOrderItem[];
@@ -59,4 +65,11 @@ export async function listAdminOrders(token: string, query: AdminOrderQuery, sig
   if (query.search) params.set("search", query.search);
   const { data, meta } = await apiRequestWithMeta<ApiOrder[]>(`/admin/orders?${params}`, { token, signal });
   return { orders: data, meta: meta as PageMeta | undefined };
+}
+
+// POST /api/v1/admin/orders/:id/ship: marks a paid order shipped with the courier's name and tracking number and emails
+// the customer once. The server re-checks everything (a verified live payment, a shippable status); repeating the same
+// carrier and tracking number returns the order unchanged.
+export function shipAdminOrder(token: string, id: string, input: { carrier: string; trackingNumber: string }) {
+  return apiRequest<ApiOrder>(`/admin/orders/${encodeURIComponent(id)}/ship`, { method: "POST", token, body: input });
 }
