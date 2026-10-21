@@ -5,6 +5,7 @@ import {
   FolderTree,
   Boxes,
   ShoppingCart,
+  CreditCard,
   Handshake,
   Users,
   Image as ImageIcon,
@@ -45,6 +46,7 @@ export const navSections: NavSection[] = [
     icon: ShoppingCart,
     items: [
       { label: "Retail Orders", href: "/orders", icon: ShoppingCart },
+      { label: "Payments", href: "/payments", icon: CreditCard },
       { label: "B2B Enquiries", href: "/b2b-enquiries", icon: Handshake },
       { label: "Customers", href: "/customers", icon: Users },
       { label: "Reviews", href: "/reviews", icon: MessageSquare },
@@ -78,6 +80,7 @@ export const pageTitles: Record<string, string> = {
   "/categories": "Categories",
   "/inventory": "Inventory",
   "/orders": "Retail Orders",
+  "/payments": "Payments",
   "/b2b-enquiries": "B2B Enquiries",
   "/customers": "Customers",
   "/reviews": "Reviews",
