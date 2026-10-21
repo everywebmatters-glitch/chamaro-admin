@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Truck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { CourierBooking } from "@/components/orders/CourierBooking";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAdminSession } from "@/components/auth/AuthProvider";
@@ -65,7 +66,7 @@ function ShippingSection({ order, onShipped }: { order: ApiOrder; onShipped: (or
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-3">
-      <p className="text-zinc-500">Hand the parcel to your courier, then enter its details. The customer is emailed the tracking number and sees it on their order page.</p>
+      <p className="text-zinc-500">Or ship by hand: hand the parcel to your courier, then enter its details. The customer is emailed the tracking number and sees it on their order page.</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Input id="ship-carrier" label="Courier" placeholder="e.g. Delhivery, Blue Dart, DTDC" value={carrier} onChange={(e) => setCarrier(e.target.value)} error={errors.carrier} maxLength={64} />
         <Input id="ship-tracking" label="Tracking number" placeholder="AWB / consignment number" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} error={errors.trackingNumber} maxLength={128} />
@@ -145,7 +146,10 @@ export function OrderDetailDialog({ order, onClose, onShipped }: { order: ApiOrd
 
           <div className="rounded-md border border-zinc-200 p-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">Shipping</p>
-            <ShippingSection order={order} onShipped={onShipped} />
+            <div className="flex flex-col gap-4">
+              <CourierBooking key={`${order.id}:${order.shipment?.status ?? "none"}`} order={order} onChanged={onShipped} />
+              {(!order.shipment || !order.shipment.waybill) && <ShippingSection order={order} onShipped={onShipped} />}
+            </div>
           </div>
 
           {order.note && (

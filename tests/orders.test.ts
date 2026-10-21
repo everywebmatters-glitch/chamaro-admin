@@ -35,7 +35,7 @@ test("the ship form is offered only for paid orders that aren't shipped, cancell
   assert.match(shipBlockReason({ ...base, paymentStatus: "REFUNDED" })!, /paid/);
   assert.match(shipBlockReason({ ...base, status: "CANCELLED" })!, /Cancelled/);
   assert.match(shipBlockReason({ ...base, status: "SHIPPED", trackingNumber: "AWB1" })!, /already/);
-  assert.match(shipBlockReason({ ...base, shipment: { waybill: "123", status: "MANIFESTED" } })!, /Delhivery/);
+  assert.match(shipBlockReason({ ...base, shipment: { waybill: "123", status: "MANIFESTED" } as never })!, /Delhivery/);
 });
 
 test("carrier and tracking number follow the API's limits", async () => {
@@ -46,4 +46,25 @@ test("carrier and tracking number follow the API's limits", async () => {
   assert.ok(validateShipment({ carrier: "DTDC", trackingNumber: "" }).trackingNumber);
   assert.ok(validateShipment({ carrier: "DTDC", trackingNumber: "<script>" }).trackingNumber);
   assert.ok(validateShipment({ carrier: "DTDC", trackingNumber: "-starts-with-dash" }).trackingNumber);
+});
+
+test("Delhivery booking actions: book or retry only paid, unshipped orders whose booking is not done or running", async () => {
+  const { canBookCourier, courierBookingUnsent, shipBlockReason } = await import("../lib/orders.ts");
+  const paid = { status: "CONFIRMED" as const, paymentStatus: "PAID" as const, trackingNumber: null };
+  const ship = (status: string, extra: object = {}) => ({ status, waybill: null, needsReconcile: false, lockedUntil: null, ...extra }) as never;
+  assert.equal(canBookCourier({ ...paid, shipment: null }), true);
+  assert.equal(canBookCourier({ ...paid, paymentStatus: "UNPAID", shipment: null }), false);
+  assert.equal(canBookCourier({ ...paid, shipment: ship("QUEUED") }), true);
+  assert.equal(canBookCourier({ ...paid, shipment: ship("CREATE_FAILED", { needsReconcile: true }) }), true);
+  assert.equal(canBookCourier({ ...paid, shipment: ship("CREATING", { lockedUntil: new Date(Date.now() + 60_000).toISOString() }) }), false, "running");
+  assert.equal(canBookCourier({ ...paid, shipment: ship("CREATING", { lockedUntil: new Date(Date.now() - 1000).toISOString() }) }), true, "lease ran out");
+  assert.equal(canBookCourier({ ...paid, status: "PROCESSING", shipment: ship("MANIFESTED", { waybill: "123" }) }), false);
+  assert.equal(canBookCourier({ ...paid, trackingNumber: "BD1", shipment: null }), false, "shipped by hand");
+
+  // Shipping by hand stays possible while the booking never reached Delhivery.
+  assert.equal(courierBookingUnsent(ship("QUEUED")), true);
+  assert.equal(courierBookingUnsent(ship("CREATE_FAILED")), true);
+  assert.equal(courierBookingUnsent(ship("CREATE_FAILED", { needsReconcile: true })), false, "Delhivery may have it");
+  assert.equal(shipBlockReason({ ...paid, shipment: ship("QUEUED") }), null);
+  assert.match(shipBlockReason({ ...paid, shipment: ship("CREATE_FAILED", { needsReconcile: true }) })!, /Delhivery/);
 });

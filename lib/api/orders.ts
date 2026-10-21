@@ -42,12 +42,40 @@ export interface ApiOrder {
   carrier: string | null;
   trackingNumber: string | null;
   shippedAt: string | null;
-  // The Delhivery shipment, when the courier integration created one (admins see the full record).
-  shipment?: { waybill: string | null; status: string } | null;
+  // The Delhivery booking, when there is one (admins see the full record).
+  shipment?: ApiShipment | null;
   createdAt: string;
   updatedAt: string;
   items: ApiOrderItem[];
   customer: { id: string; customerType: "RETAIL" | "B2B"; user: { id: string; name: string; email: string } };
+}
+
+export type ShipmentStatusCode = "QUEUED" | "CREATING" | "CREATE_FAILED" | "MANIFESTED" | "IN_TRANSIT" | "OUT_FOR_DELIVERY" | "DELIVERED" | "RETURN_IN_TRANSIT" | "RETURNED" | "CANCELLED";
+
+// Shape of RetailOrder.shipment for admins (backend Prisma Shipment).
+export interface ApiShipment {
+  id: string;
+  status: ShipmentStatusCode;
+  waybill: string | null; // the AWB, once Delhivery has created the shipment
+  uploadWbn: string | null; // Delhivery's reference for the booking (manifest upload)
+  providerStatus: string | null;
+  providerStatusLocation: string | null;
+  providerStatusAt: string | null;
+  trackingUrl: string | null; // only when Delhivery's API returns one
+  attempts: number;
+  autoBooked: boolean;
+  needsReconcile: boolean; // Delhivery may already have it: the next attempt looks it up first
+  nextAttemptAt: string | null;
+  lockedUntil: string | null;
+  lastErrorCode: string | null;
+  lastErrorRemark: string | null;
+  weightGrams: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  manifestedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
 }
 
 export interface AdminOrderQuery {
@@ -72,4 +100,16 @@ export async function listAdminOrders(token: string, query: AdminOrderQuery, sig
 // carrier and tracking number returns the order unchanged.
 export function shipAdminOrder(token: string, id: string, input: { carrier: string; trackingNumber: string }) {
   return apiRequest<ApiOrder>(`/admin/orders/${encodeURIComponent(id)}/ship`, { method: "POST", token, body: input });
+}
+
+// POST /api/v1/admin/orders/:id/shipment: books (or retries booking) the order with Delhivery. The parcel entered here
+// replaces the recorded one; without it the recorded parcel is used. The server re-checks the verified live payment,
+// and a repeat never creates a second shipment (a booking whose outcome was unknown is looked up at Delhivery first).
+export function bookCourier(token: string, id: string, parcel: { weightGrams?: number; lengthCm?: number; widthCm?: number; heightCm?: number }) {
+  return apiRequest<ApiOrder>(`/admin/orders/${encodeURIComponent(id)}/shipment`, { method: "POST", token, body: parcel });
+}
+
+// POST /api/v1/admin/orders/:id/shipment/sync: reads the shipment's status from Delhivery now.
+export function refreshCourierTracking(token: string, id: string) {
+  return apiRequest<ApiOrder>(`/admin/orders/${encodeURIComponent(id)}/shipment/sync`, { method: "POST", token });
 }
