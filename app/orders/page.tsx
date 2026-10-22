@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ShoppingCart } from "lucide-react";
+import { AlertTriangle, ShoppingCart, Truck } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { FilterDropdown } from "@/components/ui/FilterDropdown";
@@ -16,7 +16,7 @@ import { useAdminSession } from "@/components/auth/AuthProvider";
 import { ApiError, type PageMeta } from "@/lib/api/client";
 import { listAdminOrders, type ApiOrder, type OrderStatusCode, type PaymentStatusCode } from "@/lib/api/orders";
 import { getSessionToken } from "@/lib/auth/session";
-import { itemCount, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_TONES, shortOrderId, statusOptions } from "@/lib/orders";
+import { itemCount, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_TONES, shippingSummary, shortOrderId, statusOptions } from "@/lib/orders";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
@@ -35,6 +35,7 @@ export default function OrdersPage() {
   const [reloadCount, setReloadCount] = useState(0);
   const [result, setResult] = useState<Loaded | null>(null);
   const [selected, setSelected] = useState<ApiOrder | null>(null);
+  const [focusShipping, setFocusShipping] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -73,7 +74,7 @@ export default function OrdersPage() {
         header: "Order",
         primary: true,
         render: (order) => (
-          <button type="button" onClick={() => setSelected(order)} className="font-medium text-zinc-900 hover:underline">
+          <button type="button" onClick={() => { setFocusShipping(false); setSelected(order); }} className="font-medium text-zinc-900 hover:underline">
             {shortOrderId(order.id)}
           </button>
         ),
@@ -94,6 +95,23 @@ export default function OrdersPage() {
       { key: "payment", header: "Payment", render: (order) => <StatusBadge status={PAYMENT_STATUS_LABELS[order.paymentStatus]} tone={PAYMENT_TONES[order.paymentStatus]} /> },
       { key: "status", header: "Status", render: (order) => <StatusBadge status={ORDER_STATUS_LABELS[order.status]} /> },
       { key: "date", header: "Placed", render: (order) => <span className="text-zinc-500">{formatDate(order.createdAt)}</span> },
+      {
+        key: "shipping",
+        header: "Shipping",
+        render: (order) => {
+          const summary = shippingSummary(order);
+          return (
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={summary.label} tone={summary.tone} />
+              {summary.action && (
+                <Button type="button" size="sm" variant={summary.ship ? "primary" : "secondary"} icon={<Truck className="h-4 w-4" />} onClick={() => { setFocusShipping(true); setSelected(order); }}>
+                  {summary.ship ? "Ship" : "Track"}
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
     ],
     [],
   );
@@ -145,6 +163,7 @@ export default function OrdersPage() {
       {selected && (
         <OrderDetailDialog
           order={selected}
+          focusShipping={focusShipping}
           onClose={() => setSelected(null)}
           onShipped={(updated) => {
             // The ship endpoint returns the order without its customer; keep the one already loaded.

@@ -73,3 +73,16 @@ test("every booking problem the server can record has a plain-language message",
   const { BOOKING_PROBLEMS } = await import("../lib/orders.ts");
   for (const code of ["PARCEL_DETAILS_MISSING", "MULTI_PARCEL_ORDER", "DELHIVERY_NOT_CONFIGURED", "BOOKED_FOR_INELIGIBLE_ORDER"]) assert.ok(BOOKING_PROBLEMS[code], code);
 });
+
+test("the list's shipping column: what each order shows and whether the button says Ship", async () => {
+  const { shippingSummary } = await import("../lib/orders.ts");
+  const base = { trackingNumber: null, shipment: null };
+  assert.deepEqual(shippingSummary({ ...base, status: "CONFIRMED", paymentStatus: "PAID" }), { label: "Not shipped yet", tone: "amber", ship: true, action: true });
+  assert.equal(shippingSummary({ ...base, status: "PENDING", paymentStatus: "UNPAID" }).action, false);
+  assert.equal(shippingSummary({ ...base, status: "CANCELLED", paymentStatus: "UNPAID" }).action, false);
+  assert.equal(shippingSummary({ ...base, status: "SHIPPED", paymentStatus: "PAID", trackingNumber: "ABC123" }).label, "Shipped by hand");
+  const queued = shippingSummary({ status: "CONFIRMED", paymentStatus: "PAID", trackingNumber: null, shipment: { status: "QUEUED", waybill: null, needsReconcile: false } as never });
+  assert.deepEqual([queued.label, queued.ship], ["Booking queued", true]);
+  const booked = shippingSummary({ status: "PROCESSING", paymentStatus: "PAID", trackingNumber: "9300", shipment: { status: "MANIFESTED", waybill: "9300", needsReconcile: false } as never });
+  assert.deepEqual([booked.label, booked.ship], ["Booked, awaiting pickup", false]);
+});

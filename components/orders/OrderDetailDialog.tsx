@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Truck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CourierBooking } from "@/components/orders/CourierBooking";
@@ -81,8 +81,13 @@ function ShippingSection({ order, onShipped }: { order: ApiOrder; onShipped: (or
   );
 }
 
-export function OrderDetailDialog({ order, onClose, onShipped }: { order: ApiOrder; onClose: () => void; onShipped: (order: ApiOrder) => void }) {
+export function OrderDetailDialog({ order, onClose, onShipped, focusShipping = false }: { order: ApiOrder; onClose: () => void; onShipped: (order: ApiOrder) => void; focusShipping?: boolean }) {
   const address = addressLines(order.shippingAddress);
+  const shippingBox = useRef<HTMLDivElement>(null);
+  // Opened from the list's Ship button: go straight to the Shipping box.
+  useEffect(() => {
+    if (focusShipping) shippingBox.current?.scrollIntoView({ block: "start" });
+  }, [focusShipping]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-zinc-900/40" onClick={onClose} aria-hidden="true" />
@@ -144,7 +149,7 @@ export function OrderDetailDialog({ order, onClose, onShipped }: { order: ApiOrd
             <dd className="border-t border-zinc-200 pt-1 text-right font-medium text-zinc-900">{formatCurrency(Number(order.total))}</dd>
           </dl>
 
-          <div className="rounded-md border border-zinc-200 p-4">
+          <div ref={shippingBox} className="rounded-md border border-zinc-200 p-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">Shipping</p>
             <div className="flex flex-col gap-4">
               <CourierBooking key={`${order.id}:${order.shipment?.status ?? "none"}`} order={order} onChanged={onShipped} />

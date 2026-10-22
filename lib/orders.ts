@@ -101,6 +101,21 @@ export const BOOKING_PROBLEMS: Record<string, string> = {
   BOOKED_FOR_INELIGIBLE_ORDER: "This order was refunded or cancelled while it was being booked. Cancel the shipment in Delhivery's panel.",
 };
 
+// What the Retail Orders list shows in its Shipping column, and what the button beside it says. `ship` is true when the
+// admin can still ship the order (by Delhivery or by hand), so the button reads "Ship" and otherwise "Track".
+export function shippingSummary(order: Pick<ApiOrder, "status" | "paymentStatus" | "trackingNumber" | "shipment">): { label: string; tone: "green" | "amber" | "blue" | "red" | "zinc"; ship: boolean; action: boolean } {
+  const shipment = order.shipment;
+  if (shipment) {
+    const label = SHIPMENT_STATUS_LABELS[shipment.status] ?? shipment.status;
+    const tone = shipment.status === "DELIVERED" ? "green" : shipment.status === "CREATE_FAILED" || shipment.status === "RETURNED" ? "red" : shipment.status === "CANCELLED" ? "zinc" : shipment.status === "QUEUED" || shipment.status === "CREATING" ? "amber" : "blue";
+    return { label, tone, ship: courierBookingUnsent(shipment), action: true };
+  }
+  if (order.status === "CANCELLED") return { label: "Cancelled", tone: "zinc", ship: false, action: false };
+  if (order.status === "SHIPPED" || order.status === "COMPLETED" || order.trackingNumber) return { label: order.status === "COMPLETED" ? "Delivered" : "Shipped by hand", tone: order.status === "COMPLETED" ? "green" : "blue", ship: false, action: true };
+  if (order.paymentStatus !== "PAID") return { label: "Awaiting payment", tone: "zinc", ship: false, action: false };
+  return { label: "Not shipped yet", tone: "amber", ship: true, action: true };
+}
+
 // A booking that never reached Delhivery (queued, or refused with nothing created): shipping by hand withdraws it.
 export function courierBookingUnsent(shipment: ShipmentLike): boolean {
   return !shipment.waybill && (shipment.status === "QUEUED" || (shipment.status === "CREATE_FAILED" && !shipment.needsReconcile));
