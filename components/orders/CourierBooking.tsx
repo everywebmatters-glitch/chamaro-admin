@@ -55,7 +55,9 @@ export function CourierBooking({ order, onChanged }: { order: ApiOrder; onChange
     }
   }
 
-  const problem = shipment?.lastErrorCode && (shipment.status === "CREATE_FAILED" || shipment.status === "CANCELLED") ? shipment.lastErrorCode : null;
+  // A reason is shown for a failed or cancelled booking, for one waiting on Delhivery settings (still QUEUED), and for one
+  // booked just as its order was refunded or cancelled (which needs cancelling in Delhivery).
+  const problem = shipment?.lastErrorCode && (shipment.status === "CREATE_FAILED" || shipment.status === "CANCELLED" || shipment.status === "QUEUED" || shipment.lastErrorCode === "BOOKED_FOR_INELIGIBLE_ORDER") ? shipment.lastErrorCode : null;
 
   return (
     <div className="flex flex-col gap-3">

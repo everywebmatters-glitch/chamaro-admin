@@ -68,3 +68,8 @@ test("Delhivery booking actions: book or retry only paid, unshipped orders whose
   assert.equal(shipBlockReason({ ...paid, shipment: ship("QUEUED") }), null);
   assert.match(shipBlockReason({ ...paid, shipment: ship("CREATE_FAILED", { needsReconcile: true }) })!, /Delhivery/);
 });
+
+test("every booking problem the server can record has a plain-language message", async () => {
+  const { BOOKING_PROBLEMS } = await import("../lib/orders.ts");
+  for (const code of ["PARCEL_DETAILS_MISSING", "MULTI_PARCEL_ORDER", "DELHIVERY_NOT_CONFIGURED", "BOOKED_FOR_INELIGIBLE_ORDER"]) assert.ok(BOOKING_PROBLEMS[code], code);
+});

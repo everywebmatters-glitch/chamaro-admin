@@ -97,7 +97,8 @@ export const BOOKING_PROBLEMS: Record<string, string> = {
   DELHIVERY_UNAVAILABLE: "Delhivery did not answer. The retry first checks whether it created the shipment anyway.",
   DELHIVERY_BAD_RESPONSE: "Delhivery's answer could not be read. The retry first checks whether it created the shipment anyway.",
   SHIPPING_DISABLED: "Delhivery shipping is not switched on yet. Ship by hand.",
-  DELHIVERY_NOT_CONFIGURED: "Delhivery is not configured yet. Ship by hand.",
+  DELHIVERY_NOT_CONFIGURED: "Delhivery settings are incomplete (see the note below). The booking stays queued and is made once they are fixed; you can also ship by hand.",
+  BOOKED_FOR_INELIGIBLE_ORDER: "This order was refunded or cancelled while it was being booked. Cancel the shipment in Delhivery's panel.",
 };
 
 // A booking that never reached Delhivery (queued, or refused with nothing created): shipping by hand withdraws it.
