@@ -45,9 +45,16 @@ export const navSections: NavSection[] = [
     icon: ShoppingCart,
     items: [
       { label: "Retail Orders", href: "/orders", icon: ShoppingCart },
-      { label: "B2B Enquiries", href: "/b2b-enquiries", icon: Handshake },
       { label: "Customers", href: "/customers", icon: Users },
       { label: "Reviews", href: "/reviews", icon: MessageSquare },
+    ],
+  },
+  {
+    label: "B2B",
+    icon: Handshake,
+    items: [
+      { label: "B2B Page", href: "/b2b-page", icon: LayoutTemplate },
+      { label: "Enquiries", href: "/b2b-enquiries", icon: Handshake },
     ],
   },
   {
@@ -79,6 +86,7 @@ export const pageTitles: Record<string, string> = {
   "/inventory": "Inventory",
   "/orders": "Retail Orders",
   "/b2b-enquiries": "B2B Enquiries",
+  "/b2b-page": "B2B Page",
   "/customers": "Customers",
   "/reviews": "Reviews",
   "/banners": "Banners",

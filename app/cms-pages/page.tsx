@@ -164,7 +164,7 @@ export default function CmsPagesPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Pages"
-        description="Content pages stored in the Chamaro API. The storefront does not render them yet."
+        description="Content pages stored in the Chamaro API. Published pages can power configured storefront sections."
         actions={
           <Link href="/cms-pages/new/">
             <Button variant="primary" icon={<Plus className="h-4 w-4" />}>

@@ -141,8 +141,8 @@ export function CmsPageForm({ mode, pageId }: CmsPageFormProps) {
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          Saving keeps the page as it is (a new page starts as a draft); use Publish on the pages list to make it public. The
-          storefront does not render CMS pages yet, so a published page is available from the API but not shown on the site.
+          Saving keeps the page as it is (a new page starts as a draft); use Publish on the pages list to make it public.
+          Published pages are used by storefront features configured to read their slug and section types.
         </p>
       </div>
 
