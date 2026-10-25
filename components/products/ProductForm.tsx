@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, Plus, SearchX, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FormSection } from "@/components/ui/FormSection";
+import { parcelToText, parseParcel } from "@/lib/parcel-form";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
@@ -39,7 +40,7 @@ interface ProductFormProps {
   productId?: string;
 }
 
-type Field = "name" | "slug" | "description" | "shortDescription" | "infoBoxes" | "features" | "specifications" | "returnPolicy" | "warranty" | "categoryId" | "variants";
+type Field = "name" | "slug" | "description" | "shortDescription" | "infoBoxes" | "features" | "specifications" | "returnPolicy" | "warranty" | "categoryId" | "variants" | "parcel";
 type FieldErrors = Partial<Record<Field, string>>;
 
 export interface ImageRow {
@@ -237,6 +238,7 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
   const router = useRouter();
   const { logout } = useAdminSession();
   const [b2bAvailable, setB2bAvailable] = useState(false);
+  const parcelText = parcelToText(product);
   const [name, setName] = useState(product?.name ?? "");
   const [slug, setSlug] = useState(product?.slug ?? "");
   const [slugEdited, setSlugEdited] = useState(Boolean(product));
@@ -425,6 +427,9 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
 
     if (!categoryId) errors.categoryId = "Select a category.";
 
+    const parcel = parseParcel({ weightKg: text("parcelWeightKg"), lengthCm: text("parcelLengthCm"), widthCm: text("parcelWidthCm"), heightCm: text("parcelHeightCm") });
+    if ("error" in parcel) errors.parcel = parcel.error;
+
     // Attributes: each one's SKU, prices, stock and photos.
     const variantInputs: ProductVariantInput[] = [];
     const totalsInput: { status: string; price: number; compareAtPrice?: number; stock: number }[] = [];
@@ -510,6 +515,8 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
       // The API can't remove a compare-at price once set; one equal to the price is never shown.
       ...(totals.compareAtPrice !== undefined ? { compareAtPrice: totals.compareAtPrice } : product?.compareAtPrice != null ? { compareAtPrice: totals.price } : {}),
       quantity: totals.quantity,
+      // Always sent, so emptying all four clears the parcel.
+      ...("values" in parcel ? parcel.values : {}),
       // PUT replaces images and variants wholesale; both are always sent so they stay in step.
       images: imageInputs,
       variants: variantInputs,
@@ -867,6 +874,19 @@ function ProductFormFields({ mode, product }: { mode: "create" | "edit"; product
               <option value="ARCHIVED">Archived</option>
             </Select>
           </div>
+        </FormSection>
+
+        <FormSection
+          title="Shipping parcel"
+          description="One unit as packed for the courier. A paid one-unit order is booked with Delhivery automatically using these; without them (or for several units) the order waits in Retail Orders for you to enter the parcel."
+        >
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Input label="Weight (kg)" name="parcelWeightKg" inputMode="decimal" defaultValue={parcelText.weightKg} onChange={() => clearFieldError("parcel")} />
+            <Input label="Length (cm)" name="parcelLengthCm" inputMode="numeric" defaultValue={parcelText.lengthCm} onChange={() => clearFieldError("parcel")} />
+            <Input label="Width (cm)" name="parcelWidthCm" inputMode="numeric" defaultValue={parcelText.widthCm} onChange={() => clearFieldError("parcel")} />
+            <Input label="Height (cm)" name="parcelHeightCm" inputMode="numeric" defaultValue={parcelText.heightCm} onChange={() => clearFieldError("parcel")} />
+          </div>
+          {fieldErrors.parcel && <p className="text-xs text-red-600">{fieldErrors.parcel}</p>}
         </FormSection>
 
         <FormSection

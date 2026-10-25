@@ -38,6 +38,11 @@ export interface ApiProduct {
   // One line under the price, and the two Delivery & Return boxes (null until set: the storefront's wording shows)
   shortDescription: string | null;
   infoBoxes: { title: string; text: string }[] | null;
+  // One packed unit, for the courier (null = not entered: such orders wait for an admin to enter the parcel)
+  weightGrams?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
   // Storefront product-page tabs (null until set)
   features: string[] | null;
   materials: string[] | null;
@@ -107,6 +112,10 @@ export interface CreateProductInput {
   sku?: string; // <= 191, unique
   status?: ProductStatusCode; // API default: DRAFT
   quantity?: number; // integer >= 0, creates/updates the inventory record
+  weightGrams?: number | null; // one packed unit, 1..100000 g; null clears it
+  lengthCm?: number | null; // 1..500
+  widthCm?: number | null;
+  heightCm?: number | null;
   images?: ProductImageInput[]; // on update, replaces all images
   variants?: ProductVariantInput[]; // on update, replaces all variants
 }
