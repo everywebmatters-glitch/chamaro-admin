@@ -1,0 +1,9 @@
+# Cloud Build upload exclusions (no .gcloudignore existed, so only .gitignore applied).
+#!include:.gitignore
+.git
+.claude/
+.env
+.env.*
+tests/
+*.log
+tsconfig.tsbuildinfo

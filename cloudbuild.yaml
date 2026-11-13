@@ -1,4 +1,5 @@
-# Substitutions: _IMAGE (required) and _API_URL (defaults to the production API; it is public, not a secret).
+# Substitutions: _IMAGE (required; e.g. asia-south1-docker.pkg.dev/project-d95e700a-8cd9-4c1a-bd5/chamaro-images/chamaro-admin:TAG)
+# and _API_URL (defaults to the production API; it is public, not a secret).
 substitutions:
   _API_URL: https://api.chamaro.com/api/v1
 
