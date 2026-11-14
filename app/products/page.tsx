@@ -18,6 +18,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAdminSession } from "@/components/auth/AuthProvider";
 import { ApiError } from "@/lib/api/client";
 import { duplicateProductInput } from "@/lib/product-duplicate";
+import { productEditHref } from "@/lib/product-links";
 import { createAdminProduct, deleteAdminProduct, listAdminProducts, type ApiProduct, type ProductStatusCode } from "@/lib/api/products";
 import { listAdminCategories, type ApiCategory } from "@/lib/api/categories";
 import { getSessionToken } from "@/lib/auth/session";
@@ -52,7 +53,6 @@ function SavedBanner() {
 }
 
 function ProductsList() {
-  const router = useRouter();
   const { logout } = useAdminSession();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -77,7 +77,7 @@ function ProductsList() {
       for (let attempt = 1; ; attempt++) {
         try {
           const copy = await createAdminProduct(token, duplicateProductInput(product, attempt));
-          router.push(`/products/${copy.id}/edit`);
+          window.location.assign(productEditHref(copy.id));
           return;
         } catch (error) {
           if (!(error instanceof ApiError && error.status === 409 && attempt < 10)) throw error;
@@ -203,13 +203,13 @@ function ProductsList() {
       headerClassName: "text-right",
       render: (p) => (
         <div className="flex justify-end gap-1">
-          <Link
-            href={`/products/${p.id}/edit`}
+          <a
+            href={productEditHref(p.id)}
             aria-label={`Edit ${p.name}`}
             className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100"
           >
             <Pencil className="h-4 w-4" />
-          </Link>
+          </a>
           <button
             type="button"
             aria-label={`Duplicate ${p.name}`}

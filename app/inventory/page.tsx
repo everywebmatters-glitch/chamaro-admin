@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { AlertTriangle, PackageX } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchBar } from "@/components/ui/SearchBar";
@@ -17,6 +16,7 @@ import { ApiError } from "@/lib/api/client";
 import { listAllAdminProducts, type ApiProduct } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { STOCK_FILTERS, stockStatus } from "@/lib/inventory";
+import { productEditHref } from "@/lib/product-links";
 import { OrphanReleaseDialog } from "@/components/inventory/OrphanReleaseDialog";
 
 // Stock is the shared Inventory record (quantity, reservedQuantity) returned with each product.
@@ -69,9 +69,9 @@ export default function InventoryPage() {
         <div className="flex items-center gap-3">
           <ImagePreview label={p.name} src={(p.images.find((i) => i.isPrimary) ?? p.images[0])?.url} />
           <div>
-            <Link href={`/products/${p.id}/edit`} className="font-medium text-zinc-900 hover:underline">
+            <a href={productEditHref(p.id)} className="font-medium text-zinc-900 hover:underline">
               {p.name}
-            </Link>
+            </a>
             <p className="text-xs text-zinc-400">{p.sku ?? "No SKU"}</p>
           </div>
         </div>

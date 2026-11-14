@@ -16,6 +16,7 @@ import { listAllAdminProducts, type ApiProduct } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { availableUnits, LOW_STOCK_THRESHOLD, summarizeCatalog } from "@/lib/inventory";
 import { ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_TONES, shortOrderId } from "@/lib/orders";
+import { productEditHref } from "@/lib/product-links";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const quickActions = [
@@ -141,9 +142,9 @@ export default function DashboardPage() {
                   const units = availableUnits(product) ?? 0;
                   return (
                     <li key={product.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                      <Link href={`/products/${product.id}/edit`} className="truncate font-medium text-zinc-800 hover:underline">
+                      <a href={productEditHref(product.id)} className="truncate font-medium text-zinc-800 hover:underline">
                         {product.name}
-                      </Link>
+                      </a>
                       <span className={`shrink-0 whitespace-nowrap font-medium ${units <= 0 ? "text-red-600" : "text-amber-600"}`}>
                         {units <= 0 ? "Out of stock" : `${units} left`}
                       </span>
@@ -183,9 +184,9 @@ export default function DashboardPage() {
                 {summary.recent.map((product) => (
                   <li key={product.id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
                     <div className="min-w-0">
-                      <Link href={`/products/${product.id}/edit`} className="block truncate font-medium text-zinc-800 hover:underline">
+                      <a href={productEditHref(product.id)} className="block truncate font-medium text-zinc-800 hover:underline">
                         {product.name}
-                      </Link>
+                      </a>
                       <p className="truncate text-xs text-zinc-400">
                         {product.category.name} · added {formatDate(product.createdAt)}
                       </p>
