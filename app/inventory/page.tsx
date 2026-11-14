@@ -17,15 +17,18 @@ import { ApiError } from "@/lib/api/client";
 import { listAllAdminProducts, type ApiProduct } from "@/lib/api/products";
 import { getSessionToken } from "@/lib/auth/session";
 import { STOCK_FILTERS, stockStatus } from "@/lib/inventory";
+import { OrphanReleaseDialog } from "@/components/inventory/OrphanReleaseDialog";
 
 // Stock is the shared Inventory record (quantity, reservedQuantity) returned with each product.
-// It's edited on the product form; the API has no separate inventory endpoint or stock filter,
-// so the status filter below runs on the loaded list.
+// On hand is edited on the product form. Reserved units are never edited there: the only way to change them by hand
+// is the separate "Release orphaned reservation" action (reserved units that no order holds; recorded in the stock
+// ledger). The status filter below runs on the loaded list.
 export default function InventoryPage() {
   const { logout } = useAdminSession();
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState("");
   const [reloadCount, setReloadCount] = useState(0);
+  const [releaseTarget, setReleaseTarget] = useState<{ id: string; name: string } | null>(null);
   const [result, setResult] = useState<{ key: number; products: ApiProduct[] } | { key: number; error: ApiError } | null>(null);
   const isLoading = result?.key !== reloadCount;
 
@@ -98,6 +101,18 @@ export default function InventoryPage() {
       header: "Stock status",
       render: (p) => stockStatus(p),
     },
+    {
+      key: "corrections",
+      header: "Corrections",
+      render: (p) =>
+        p.inventory && p.inventory.reservedQuantity > 0 ? (
+          <Button size="sm" variant="secondary" onClick={() => setReleaseTarget({ id: p.id, name: p.name })}>
+            Release orphaned reservation
+          </Button>
+        ) : (
+          <span className="text-zinc-400">—</span>
+        ),
+    },
   ];
 
   let content;
@@ -147,6 +162,15 @@ export default function InventoryPage() {
       </div>
 
       {content}
+
+      {releaseTarget && (
+        <OrphanReleaseDialog
+          productId={releaseTarget.id}
+          productName={releaseTarget.name}
+          onClose={() => setReleaseTarget(null)}
+          onReleased={() => setReloadCount((n) => n + 1)}
+        />
+      )}
     </div>
   );
 }
