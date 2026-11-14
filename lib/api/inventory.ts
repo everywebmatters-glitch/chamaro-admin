@@ -2,9 +2,10 @@ import { apiRequest } from "@/lib/api/client";
 import type { OrphanReleaseView, StockFigures } from "@/lib/orphan-release";
 
 // Admin inventory corrections (backend/src/routes/inventory.routes.ts).
+// Paths are relative to NEXT_PUBLIC_API_URL, which already ends in /api/v1.
 
 export function getOrphanReleaseView(token: string, productId: string, signal?: AbortSignal): Promise<OrphanReleaseView> {
-  return apiRequest<OrphanReleaseView>(`/api/v1/admin/inventory/products/${encodeURIComponent(productId)}/orphan-release`, { token, signal });
+  return apiRequest<OrphanReleaseView>(`/admin/inventory/products/${encodeURIComponent(productId)}/orphan-release`, { token, signal });
 }
 
 export interface OrphanReleaseRequest {
@@ -21,5 +22,5 @@ export interface OrphanReleaseResponse {
 }
 
 export function releaseOrphanedReservation(token: string, productId: string, body: OrphanReleaseRequest): Promise<OrphanReleaseResponse> {
-  return apiRequest<OrphanReleaseResponse>(`/api/v1/admin/inventory/products/${encodeURIComponent(productId)}/orphan-releases`, { method: "POST", token, body });
+  return apiRequest<OrphanReleaseResponse>(`/admin/inventory/products/${encodeURIComponent(productId)}/orphan-releases`, { method: "POST", token, body });
 }
